@@ -1,0 +1,2391 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Raptor Monitoramento v7.1 (Supabase Integrado)</title>
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" xintegrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <!-- Bibliotecas para exportação de PDF -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.23/jspdf.plugin.autotable.min.js"></script>
+
+    <!-- BIBLIOTECA DO SUPABASE ADICIONADA -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+
+    <style>
+        :root {
+            --bg: #eef2f7; --card: rgba(255, 255, 255, 0.6); --card-border: rgba(255, 255, 255, 0.9);
+            --text: #111827; --muted: #6b7280; --accent: #2563eb;
+            --row-highlight-speed: rgba(254, 226, 226, 0.7); --row-highlight-stop: rgba(219, 234, 254, 0.7);
+        }
+        .dark {
+            --bg: #0b1220; --card: rgba(30, 41, 59, 0.5); --card-border: rgba(55, 65, 81, 0.7);
+            --text: #e6eef8; --muted: #9aa7b6; --accent: #3b82f6;
+            --row-highlight-speed: rgba(153, 27, 27, 0.3); --row-highlight-stop: rgba(30, 58, 138, 0.3);
+        }
+        body {
+            font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+            background-color: var(--bg); color: var(--text); transition: background-color 0.3s, color 0.3s;
+            -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+        }
+        .card {
+            background: var(--card); border: 1px solid var(--card-border); border-radius: 16px;
+            padding: 1.25rem; box-shadow: 0 8px 32px 0 rgba(2, 6, 23, 0.1);
+            backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); transition: all 0.3s;
+        }
+        .card:hover { transform: translateY(-4px); box-shadow: 0 12px 40px 0 rgba(2, 6, 23, 0.15); }
+        .dashboard-card { padding: 1rem; display: flex; gap: 0.75rem; align-items: center; }
+        .dashboard-value { font-weight:700; font-size:1.25rem; }
+        #map-container { height: 65vh; min-height: 450px; }
+        #map { height: 100%; width: 100%; border-radius: 0.75rem; }
+        #grid-section { height: 40vh; display:flex; flex-direction:column; min-height:300px; }
+        #grid-container { flex-grow:1; overflow:auto; }
+        .highlight-row-speed { background-color: var(--row-highlight-speed) !important; }
+        .highlight-row-stop { background-color: var(--row-highlight-stop) !important; }
+        tbody tr { transition: background-color 0.2s ease-in-out; }
+        .spinner {
+            width: 44px; height: 44px; border-radius: 9999px; border: 4px solid rgba(0,0,0,0.08);
+            border-top-color: var(--accent); animation: spin 0.9s linear infinite; margin-right: 12px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        #notification-banner, .modal-backdrop { position: fixed; z-index: 10000; transition: opacity .4s, transform .4s; }
+        #notification-banner { top: 1rem; left: 50%; transform: translateX(-50%); display:none; }
+        .modal-backdrop {
+            top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(0,0,0,0.7);
+            display: none; align-items: center; justify-content: center;
+            backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+        }
+        .modal-content {
+             background: var(--bg); padding: 2rem; border-radius: 16px;
+             width: 90%; max-width: 500px; text-align: center;
+        }
+        .custom-map-icon {
+            width: 32px !important; height: 32px !important; display: flex; align-items: center;
+            justify-content: center; border-radius: 50%; color: white; font-weight: bold;
+            font-size: 14px; box-shadow: 0 2px 5px rgba(0,0,0,0.3); border: 2px solid white;
+        }
+        
+        /* Estilos do Painel Lateral */
+        #side-panel {
+            position: fixed;
+            top: 0;
+            left: 0;
+            height: 100%;
+            width: 350px;
+            max-width: 90vw;
+            transform: translateX(-100%);
+            transition: transform 0.3s ease-in-out;
+            z-index: 11000;
+        }
+        #side-panel.is-open {
+            transform: translateX(0);
+        }
+        #panel-backdrop {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+            z-index: 10500;
+            opacity: 0;
+            transition: opacity 0.3s ease-in-out;
+            pointer-events: none;
+        }
+        #panel-backdrop.is-visible {
+            opacity: 1;
+            pointer-events: auto;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 dark:bg-gray-900 text-text">
+
+    <!-- Login Page -->
+    <div id="login-page" class="min-h-screen w-full grid grid-cols-1 md:grid-cols-2">
+        <div class="flex flex-col items-center justify-center p-6 sm:p-12">
+            <div class="w-full max-w-sm">
+                <img src="https://images.vexels.com/media/users/3/200099/isolated/preview/1534333615565961342-silhueta-de-dinossauro-velociraptor.png" alt="Raptor" class="h-20 mx-auto mb-6">
+                <h2 class="text-2xl font-bold text-center mb-2">Acesso ao Raptor Monitoramento</h2>
+                <p class="text-center text-muted mb-6 text-sm">Entre com seu email e senha para continuar.</p>
+                <p id="login-error" class="text-red-500 text-sm hidden text-center mb-4">Email ou senha inválidos.</p>
+                <div class="space-y-4">
+                    <div>
+                        <label for="username-input" class="block mb-1 text-sm font-medium">Email</label>
+                        <input type="email" id="username-input" class="w-full p-3 rounded-lg border bg-gray-50 dark:bg-slate-700 dark:border-slate-600 focus:ring-2 focus:ring-blue-500 outline-none transition-colors" />
+                    </div>
+                    <div>
+                        <label for="password-input" class="block mb-1 text-sm font-medium">Senha</label>
+                        <input type="password" id="password-input" class="w-full p-3 rounded-lg border bg-gray-50 dark:bg-slate-700 dark:border-slate-600 focus:ring-2 focus:ring-blue-500 outline-none transition-colors" />
+                    </div>
+                </div>
+                <div class="pt-6">
+                    <button id="login-btn" class="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">Entrar</button>
+                </div>
+            </div>
+        </div>
+        <div id="login-image-panel" class="hidden md:block bg-cover bg-center relative" style="background-image: url('https://images.unsplash.com/photo-1577974314720-56781295738a?q=80&w=2070&auto=format&fit=crop');">
+            <div class="absolute bottom-4 right-4">
+                <label for="login-bg-input" class="px-3 py-2 rounded-lg bg-black/40 text-white/90 backdrop-blur-sm hover:bg-black/60 cursor-pointer text-sm transition-colors">Alterar Imagem</label>
+                <input type="file" id="login-bg-input" accept="image/*" class="hidden">
+            </div>
+        </div>
+    </div>
+
+    <!-- Modals -->
+    <div id="trial-lockout-backdrop" class="modal-backdrop">
+        <div class="modal-content space-y-4">
+             <img src="https://images.vexels.com/media/users/3/200099/isolated/preview/1534333615565961342-silhueta-de-dinossauro-velociraptor.png" alt="Raptor" class="h-20 mx-auto mb-4">
+             <h2 class="text-2xl font-bold">Período de Avaliação Expirado</h2>
+             <p class="text-muted">O seu período de avaliação de 7 dias para o Raptor Monitoramento terminou.</p>
+             <p>Para continuar a usar esta ferramenta, por favor, entre em contato para adquirir uma licença.</p>
+             <div class="pt-4">
+                <a href="mailto:lipexpc2006@gmail.com?subject=Licença%20Raptor%20Monitoramento" class="inline-block w-full max-w-xs bg-green-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-green-700 transition-colors">Adquirir Licença</a>
+             </div>
+        </div>
+    </div>
+
+    <div id="notification-banner" class="p-4 rounded-lg shadow-lg text-white">
+        <span id="notification-message"></span>
+        <button onclick="hideNotification()" class="ml-4 font-bold">X</button>
+    </div>
+
+    <div id="poi-modal-backdrop" class="modal-backdrop">
+        <div class="modal-content space-y-4 text-left">
+             <h2 class="text-xl font-bold text-center">Adicionar Ponto de Interesse</h2>
+             <div>
+                <label for="poi-name-input" class="block mb-1 text-sm">Nome do POI</label>
+                <input type="text" id="poi-name-input" placeholder="Ex: Sede da Empresa" class="w-full p-2 rounded border bg-transparent" />
+             </div>
+             <div>
+                <label for="poi-type-select" class="block mb-1 text-sm">Tipo de POI</label>
+                <select id="poi-type-select" class="w-full p-2 rounded border bg-gray-50 dark:bg-slate-700 dark:border-slate-600">
+                    <option value="poi_cliente">Cliente</option>
+                    <option value="poi_armazem">Armazém</option>
+                    <option value="poi_portuario">Terminal Portuário</option>
+                    <option value="poi_aeroportuario">Terminal Aeroportuário</option>
+                    <option value="poi_geral">Geral</option>
+                </select>
+             </div>
+             <div class="flex justify-end gap-4 pt-4">
+                <button id="poi-cancel-btn" class="px-4 py-2 rounded-lg border">Cancelar</button>
+                <button id="poi-save-btn" class="px-4 py-2 rounded-lg bg-blue-600 text-white">Salvar</button>
+             </div>
+        </div>
+    </div>
+    
+    <div id="change-password-backdrop" class="modal-backdrop">
+        <div class="modal-content space-y-4 text-left">
+             <h2 class="text-xl font-bold text-center">Alterar Senha</h2>
+             <div>
+                <label for="current-password-input" class="block mb-1 text-sm">Senha Atual</label>
+                <input type="password" id="current-password-input" class="w-full p-2 rounded border bg-transparent" />
+             </div>
+             <div>
+                <label for="new-password-input" class="block mb-1 text-sm">Nova Senha</label>
+                <input type="password" id="new-password-input" class="w-full p-2 rounded border bg-transparent" />
+             </div>
+             <div>
+                <label for="confirm-password-input" class="block mb-1 text-sm">Confirmar Nova Senha</label>
+                <input type="password" id="confirm-password-input" class="w-full p-2 rounded border bg-transparent" />
+             </div>
+             <div class="flex justify-end gap-4 pt-4">
+                <button id="password-cancel-btn" class="px-4 py-2 rounded-lg border">Cancelar</button>
+                <button id="password-save-btn" class="px-4 py-2 rounded-lg bg-blue-600 text-white">Salvar Alterações</button>
+             </div>
+        </div>
+    </div>
+    
+    <div id="saved-analyses-backdrop" class="modal-backdrop">
+        <div class="modal-content text-left max-w-2xl">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold">Análises Salvas</h2>
+                <button id="close-analyses-modal-btn" class="text-2xl font-bold">&times;</button>
+            </div>
+            <div id="saved-analyses-list" class="max-h-96 overflow-y-auto space-y-3 pr-2">
+            </div>
+        </div>
+    </div>
+
+    <!-- NOVO MODAL: Ranking de Performance -->
+    <div id="performance-ranking-backdrop" class="modal-backdrop">
+        <div class="modal-content text-left max-w-2xl">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold">Ranking de Performance</h2>
+                <button id="close-ranking-modal-btn" class="text-2xl font-bold">&times;</button>
+            </div>
+            <div id="performance-ranking-list" class="max-h-96 overflow-y-auto space-y-3 pr-2">
+                <!-- Tabela do ranking será inserida aqui -->
+            </div>
+            <div class="pt-4 text-right">
+                <button id="reset-ranking-btn" class="px-3 py-1 text-sm bg-red-600 text-white rounded hover:bg-red-700">Resetar Ranking</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- NOVO LAYOUT: Painel Lateral -->
+    <div id="panel-backdrop"></div>
+    <div id="side-panel" class="bg-gray-50 dark:bg-gray-800 shadow-2xl">
+        <div class="p-6 h-full flex flex-col">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-xl font-bold">Configurar Análise</h2>
+                <button id="close-panel-btn" class="text-2xl">&times;</button>
+            </div>
+            <div class="flex-grow overflow-y-auto pr-4 space-y-4">
+                <div>
+                    <label for="client-name" class="block mb-1 text-sm">Nome do Cliente</label>
+                    <input type="text" id="client-name" placeholder="Ex: Empresa Exemplo" class="w-full p-2 rounded border bg-transparent" />
+                </div>
+                <div>
+                    <label for="driver-name" class="block mb-1 text-sm">Nome do Motorista</label>
+                    <input type="text" id="driver-name" placeholder="Ex: João da Silva" class="w-full p-2 rounded border bg-transparent" />
+                </div>
+                <div>
+                    <label for="plate-number" class="block mb-1 text-sm">Placa do Veículo</label>
+                    <input type="text" id="plate-number" placeholder="Ex: ABC-1234" class="w-full p-2 rounded border bg-transparent font-mono" />
+                </div>
+                <div>
+                    <label for="process-number" class="block mb-1 text-sm">Número do Processo</label>
+                    <input type="text" id="process-number" placeholder="Ex: PRO-12345" class="w-full p-2 rounded border bg-transparent" />
+                </div>
+                <div class="grid grid-cols-2 gap-4 pt-2">
+                    <div>
+                        <label for="speed-limit" class="block mb-1 text-sm">Vel. Limite (km/h)</label>
+                        <input type="number" id="speed-limit" value="80" class="w-full p-2 rounded border bg-transparent" />
+                    </div>
+                    <div>
+                        <label for="stop-time" class="block mb-1 text-sm">Parada (min)</label>
+                        <input type="number" id="stop-time" value="5" class="w-full p-2 rounded border bg-transparent" />
+                    </div>
+                </div>
+                <div>
+                    <label for="poi-radius" class="block mb-1 text-sm">Raio do POI (metros)</label>
+                    <input type="number" id="poi-radius" value="500" class="w-full p-2 rounded border bg-transparent" />
+                </div>
+                <div id="time-filter-container" class="pt-4 hidden space-y-3">
+                    <div>
+                        <label for="start-date" class="block mb-1 text-sm">Data/Hora Inicial</label>
+                        <div class="flex gap-2">
+                            <input type="date" id="start-date" class="w-full p-2 rounded border bg-transparent">
+                            <input type="time" id="start-time" class="w-full p-2 rounded border bg-transparent">
+                        </div>
+                    </div>
+                    <div>
+                        <label for="end-date" class="block mb-1 text-sm">Data/Hora Final</label>
+                        <div class="flex gap-2">
+                            <input type="date" id="end-date" class="w-full p-2 rounded border bg-transparent">
+                            <input type="time" id="end-time" class="w-full p-2 rounded border bg-transparent">
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="mt-6 space-y-3 pt-4 border-t">
+                <label for="file-input" class="block w-full text-center bg-blue-600 text-white font-bold py-3 px-4 rounded-lg cursor-pointer hover:bg-blue-700 transition-colors">Carregar Relatório</label>
+                <input id="file-input" type="file" accept=".xlsx, .csv" class="hidden" />
+                <button id="add-poi-btn" class="w-full bg-indigo-600 text-white py-3 rounded-lg hover:bg-indigo-700 transition-colors">Adicionar POI</button>
+                <button id="clear-pois-btn" class="w-full bg-amber-600 text-white py-3 rounded-lg hover:bg-amber-700 transition-colors">Limpar POIs</button>
+                <div class="grid grid-cols-2 gap-3">
+                    <button id="save-analysis-btn" class="w-full bg-teal-600 text-white py-3 rounded-lg hover:bg-teal-700 transition-colors" disabled>Salvar Análise</button>
+                    <div class="relative">
+                        <button id="download-btn" class="w-full bg-green-600 text-white py-3 rounded-lg hover:bg-green-700 transition-colors" disabled>Baixar Relatório</button>
+                        <div id="download-dropdown" class="absolute bottom-full mb-2 w-full bg-white dark:bg-gray-800 rounded-md shadow-lg py-1 z-20 hidden">
+                            <a href="#" id="download-xlsx-btn" class="block px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700">Exportar para XLSX</a>
+                            <a href="#" id="download-pdf-btn" class="block px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700">Exportar para PDF</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- App Page -->
+    <div id="app-page" class="p-4 md:p-6 lg:p-8 flex-col w-full min-h-screen" style="display: none;">
+        <header class="mb-6 flex items-center justify-between">
+            <div class="flex items-center gap-4">
+                <button id="open-panel-btn" class="p-2 rounded-lg border bg-card hover:bg-gray-200 dark:hover:bg-gray-700">
+                    <i class="fa-solid fa-sliders"></i>
+                </button>
+                <img id="header-icon" src="https://images.vexels.com/media/users/3/200099/isolated/preview/1534333615565961342-silhueta-de-dinossauro-velociraptor.png" alt="Raptor" class="h-16">
+                <h1 id="app-title" class="text-4xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-400">Raptor Monitoramento</h1>
+            </div>
+
+            <div class="flex items-center gap-3">
+                <button id="show-ranking-btn" class="px-3 py-2 rounded-lg border">Ranking</button>
+                <button id="view-saved-analyses-btn" class="px-3 py-2 rounded-lg border">Análises Salvas</button>
+                <button id="theme-toggle" title="Alternar tema" class="px-3 py-2 rounded-lg border" aria-label="Tema">🌓</button>
+                <div class="relative">
+                    <button id="user-menu-btn" class="w-10 h-10 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" /></svg>
+                    </button>
+                    <div id="user-menu-dropdown" class="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-md shadow-lg py-1 z-20 hidden">
+                        <a href="#" id="change-icon-menu-item" class="block px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700">Alterar Ícone</a>
+                        <input id="icon-input" type="file" accept="image/*" class="hidden">
+                        <a href="#" id="change-password-menu-item" class="block px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700">Alterar Senha</a>
+                        <a href="#" id="logout-menu-item" class="block px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700">Desconectar</a>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Dashboard Cards -->
+        <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-6">
+            <div class="dashboard-card card">
+                 <div class="w-12 h-12 flex-shrink-0 flex items-center justify-center rounded-full bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-300">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" /></svg>
+                </div>
+                <div><p class="text-sm text-muted">Distância Total</p><p id="total-km" class="dashboard-value">- KM</p></div>
+            </div>
+            <div class="dashboard-card card">
+                <div class="w-12 h-12 flex-shrink-0 flex items-center justify-center rounded-full bg-purple-100 dark:bg-purple-900/50 text-purple-600 dark:text-purple-300">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                </div>
+                <div><p class="text-sm text-muted">Duração Total</p><p id="total-duration" class="dashboard-value">--:--:--</p></div>
+            </div>
+            <div class="dashboard-card card">
+                <div class="w-12 h-12 flex-shrink-0 flex items-center justify-center rounded-full bg-green-100 dark:bg-green-900/50 text-green-600 dark:text-green-300">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z" /></svg>
+                </div>
+                <div><p class="text-sm text-muted">Ignição Ligada</p><p id="ignition-on-time" class="dashboard-value">--:--:--</p></div>
+            </div>
+             <div class="dashboard-card card">
+                <div class="w-12 h-12 flex-shrink-0 flex items-center justify-center rounded-full bg-orange-100 dark:bg-orange-900/50 text-orange-600 dark:text-orange-300">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
+                </div>
+                <div><p class="text-sm text-muted">Velocidade Média</p><p id="avg-speed" class="dashboard-value">- km/h</p></div>
+            </div>
+            <div class="dashboard-card card">
+                <div class="w-12 h-12 flex-shrink-0 flex items-center justify-center rounded-full bg-red-100 dark:bg-red-900/50 text-red-600 dark:text-red-300">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M2.25 12a8.96 8.96 0 0117.908 0" /></svg>
+                </div>
+                <div><p class="text-sm text-muted">Velocidade Máxima</p><p id="max-speed" class="dashboard-value">- km/h</p></div>
+            </div>
+            <div class="dashboard-card card">
+                <div class="w-12 h-12 flex-shrink-0 flex items-center justify-center rounded-full bg-red-100 dark:bg-red-900/50 text-red-600 dark:text-red-300">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" /></svg>
+                </div>
+                <div><p id="speeding-label" class="text-sm text-muted">Velocidade > 80km/h</p><p id="speeding-count" class="dashboard-value">0 vezes</p></div>
+            </div>
+        </div>
+
+        <main class="main-container flex-grow">
+            <div class="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-6">
+                <!-- Coluna 1: Mapa -->
+                <section id="map-container" class="card relative">
+                    <div id="map" class="w-full h-full rounded-lg"></div>
+                    <div id="map-placeholder" class="absolute inset-0 flex items-center justify-center bg-gray-100/50 dark:bg-gray-800/50 rounded-lg z-10 pointer-events-none" style="display:flex;">
+                        <div class="flex items-center"><div class="spinner" aria-hidden="true"></div><div class="text-muted">Aguardando carregamento do relatório...</div></div>
+                    </div>
+                </section>
+                
+                <!-- Coluna 2: Gráfico e Eventos -->
+                <div class="flex flex-col gap-6">
+                    <section id="chart-container" class="card relative">
+                        <canvas id="speedChart"></canvas>
+                        <div id="chart-placeholder" class="absolute inset-0 flex items-center justify-center bg-gray-100/50 dark:bg-gray-800/50 rounded-lg z-10 pointer-events-none" style="display:flex;">
+                            <div class="flex items-center"><div class="spinner" aria-hidden="true"></div><div class="text-muted">Aguardando dados para gerar o gráfico...</div></div>
+                        </div>
+                    </section>
+                    
+                    <!-- Card de Eventos da Viagem -->
+                    <section class="card flex flex-col p-4 flex-grow">
+                        <div class="flex items-center mb-2">
+                            <div class="w-10 h-10 flex-shrink-0 flex items-center justify-center rounded-full bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-300 mr-3">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" d="M10.125 2.25h-4.5c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125v-9M10.125 2.25h.375a9 9 0 019 9v.375M10.125 2.25A3.375 3.375 0 0113.5 5.625v1.5c0 .621.504 1.125 1.125 1.125h1.5a3.375 3.375 0 013.375 3.375M9 15l2.25 2.25L15 12" /></svg>
+                            </div>
+                            <h3 id="trip-events-title" class="text-sm text-muted font-semibold">Eventos da Viagem</h3>
+                        </div>
+                        <div id="trip-events-list" class="flex-grow space-y-1 pl-1 pr-2 overflow-y-auto">
+                            <p class="text-muted text-sm">Aguardando relatório...</p>
+                        </div>
+                    </section>
+                </div>
+            </div>
+            
+            <section id="timeline-section" class="card mb-6">
+                <h2 class="text-xl font-semibold mb-2">Linha do Tempo da Viagem</h2>
+                <div id="timeline-container">
+                    <div id="timeline-track"></div>
+                    <div id="timeline-events"></div>
+                </div>
+            </section>
+            <section id="grid-section" class="card">
+                <h2 class="text-xl font-semibold mb-4">Dados de Rastreabilidade</h2>
+                <div id="grid-container">
+                    <div id="grid-placeholder" class="h-full w-full flex items-center justify-center bg-gray-100/50 dark:bg-gray-800/50 rounded-lg">
+                        <div class="flex items-center"><div class="spinner" aria-hidden="true"></div><div class="text-muted">Nenhum dado para exibir.</div></div>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <footer class="text-center py-4 mt-auto">
+            <p class="text-sm text-muted">© 2025 LFM Logística e Tecnologia. Todos os direitos reservados.</p>
+        </footer>
+    </div>
+
+    <script>
+        /********************* Variáveis globais *********************/
+        let map, speedChart, layerControl;
+        
+        const SUPABASE_URL = 'https://nswtujtazweoinlnqajm.supabase.co'; 
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5zd3R1anRhendlb2lubG5xYWptIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ5NjE3MDAsImV4cCI6MjA3MDUzNzcwMH0.KipnKzaMbL5PNp0qQoVU3LpRLgl0n_wXHvDEK9b70D8'; 
+        
+        const { createClient } = supabase;
+        const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        let vehiclePathLayer = L.layerGroup();
+        let highlightMarker = null;
+        const poiLayers = {
+            poi_cliente: L.layerGroup(),
+            poi_armazem: L.layerGroup(),
+            poi_portuario: L.layerGroup(),
+            poi_aeroportuario: L.layerGroup(),
+            poi_geral: L.layerGroup()
+        };
+        const poiTypeMap = {
+            poi_cliente: 'Cliente',
+            poi_armazem: 'Armazém',
+            poi_portuario: 'Terminal Portuário',
+            poi_aeroportuario: 'Terminal Aeroportuário',
+            poi_geral: 'Geral'
+        };
+        const speedingLayerGroup = L.layerGroup();
+        const stoppedLayerGroup = L.layerGroup();
+        let reportData = [], reportHeaders = [], originalReportJson = [], filteredData = [];
+        let poiModeActive = false;
+        let dashboardMetrics = {};
+        let tripWeather = null;
+        const addressCache = new Map();
+        let currentPoiLatLng = null;
+        const gridRowToTimelineEventMap = new Map();
+
+        /********************* Módulo de Banco de Dados (agora com Supabase) *********************/
+        const raptorDB = {
+            async saveAnalysis(analysis) {
+                const { data: { user } } = await supabaseClient.auth.getUser();
+                if (!user) throw new Error("Usuário não autenticado.");
+
+                const analysisToSave = {
+                    ...analysis,
+                    user_id: user.id,
+                };
+                
+                const { error } = await supabaseClient
+                    .from('analyses')
+                    .insert([analysisToSave]);
+
+                if (error) {
+                    console.error("Erro ao salvar a análise:", error);
+                    throw new Error("Erro ao salvar a análise: " + error.message);
+                }
+            },
+            async getAnalyses() {
+                const { data, error } = await supabaseClient
+                    .from('analyses')
+                    .select('*')
+                    .order('saved_at', { ascending: false });
+
+                if (error) {
+                    console.error("Erro ao buscar análises:", error);
+                    throw new Error("Erro ao buscar análises: " + error.message);
+                }
+                return data;
+            },
+            async getAnalysis(id) {
+                const { data, error } = await supabaseClient
+                    .from('analyses')
+                    .select('*')
+                    .eq('id', id)
+                    .single();
+
+                if (error) {
+                    console.error("Erro ao carregar análise:", error);
+                    throw new Error("Erro ao carregar análise: " + error.message);
+                }
+                return data;
+            },
+            async deleteAnalysis(id) {
+                const { error } = await supabaseClient
+                    .from('analyses')
+                    .delete()
+                    .eq('id', id);
+
+                if (error) {
+                    console.error("Erro ao apagar análise:", error);
+                    throw new Error("Erro ao apagar análise: " + error.message);
+                }
+            }
+        };
+
+
+        /********************* Inicialização *********************/
+        document.addEventListener('DOMContentLoaded', () => {
+            supabaseClient.auth.getSession().then(({ data: { session } }) => {
+                if (session) {
+                    document.getElementById('login-page').style.display = 'none';
+                    document.getElementById('app-page').style.display = 'flex';
+                    initializeApp();
+                } else {
+                    document.getElementById('login-page').style.display = 'grid';
+                    document.getElementById('app-page').style.display = 'none';
+                }
+            });
+
+            if (!checkTrialStatus()) {
+                return; 
+            }
+            document.getElementById('login-btn').addEventListener('click', handleLogin);
+            document.getElementById('password-input').addEventListener('keypress', (e) => { if (e.key === 'Enter') handleLogin(); });
+            document.getElementById('login-bg-input').addEventListener('change', handleLoginBackgroundChange);
+            loadLoginImage();
+        });
+        
+        async function initializeApp() {
+            try {
+                initTheme();
+                initializeMap();
+                setupEventListeners();
+                loadPoisFromLocalStorage();
+                initializeChart();
+                loadCustomIcon();
+                loadSavedConfig();
+                showPlaceholders(true);
+            } catch (error) {
+                console.error("Falha na inicialização do App:", error);
+                showNotification("Não foi possível iniciar a aplicação.", "error");
+            }
+        }
+
+        /********************* Lógica de Login e Avaliação *********************/
+        async function handleLogin() {
+            const user = document.getElementById('username-input').value;
+            const pass = document.getElementById('password-input').value;
+            const errorEl = document.getElementById('login-error');
+
+            const { data, error } = await supabaseClient.auth.signInWithPassword({
+                email: user,
+                password: pass,
+            });
+
+            if (error) {
+                console.error('Erro no login:', error.message);
+                errorEl.textContent = 'Email ou senha inválidos.';
+                errorEl.classList.remove('hidden');
+            } else {
+                console.log('Login bem-sucedido!', data.user);
+                document.getElementById('login-page').style.display = 'none';
+                document.getElementById('app-page').style.display = 'flex';
+                await initializeApp();
+            }
+        }
+
+        function handleLoginBackgroundChange(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const imageUrl = e.target.result;
+                const imagePanel = document.getElementById('login-image-panel');
+                if(imagePanel) imagePanel.style.backgroundImage = `url(${imageUrl})`;
+                try { localStorage.setItem('raptorLoginImage', imageUrl); } catch (err) {
+                    showNotification('A imagem é muito grande para ser salva permanentemente.', 'error');
+                }
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function loadLoginImage() {
+            const savedImage = localStorage.getItem('raptorLoginImage');
+            if (savedImage) {
+                const imagePanel = document.getElementById('login-image-panel');
+                if(imagePanel) imagePanel.style.backgroundImage = `url(${savedImage})`;
+            }
+        }
+
+        function checkTrialStatus() {
+            const trialKey = 'raptor_trial_start_date';
+            const trialStartDateStr = localStorage.getItem(trialKey);
+            const sevenDaysInMillis = 7 * 24 * 60 * 60 * 1000;
+
+            if (!trialStartDateStr) {
+                localStorage.setItem(trialKey, new Date().toISOString());
+                return true;
+            }
+
+            const trialStartDate = new Date(trialStartDateStr);
+            const timeElapsed = new Date().getTime() - trialStartDate.getTime();
+
+            if (timeElapsed >= sevenDaysInMillis) {
+                document.getElementById('trial-lockout-backdrop').style.display = 'flex';
+                document.getElementById('login-page').style.display = 'none';
+                return false;
+            }
+            return true;
+        }
+
+        /********************* TEMA (alternar + carregar/salvar) *********************/
+        function initTheme() {
+            const saved = localStorage.getItem('raptor_theme');
+            const preferDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+            const theme = saved || (preferDark ? 'dark' : 'light');
+            document.documentElement.classList.toggle('dark', theme === 'dark');
+            document.getElementById('theme-toggle').addEventListener('click', () => {
+                const nowDark = document.documentElement.classList.toggle('dark');
+                localStorage.setItem('raptor_theme', nowDark ? 'dark' : 'light');
+            });
+        }
+
+        /********************* Eventos UI *********************/
+        function setupEventListeners() {
+            document.getElementById('file-input').addEventListener('change', handleFileSelection);
+            document.getElementById('add-poi-btn').addEventListener('click', togglePoiMode);
+            document.getElementById('clear-pois-btn').addEventListener('click', clearPois);
+            
+            const downloadBtn = document.getElementById('download-btn');
+            const downloadDropdown = document.getElementById('download-dropdown');
+            downloadBtn.addEventListener('click', () => {
+                if(!downloadBtn.disabled) {
+                    downloadDropdown.classList.toggle('hidden');
+                }
+            });
+            document.getElementById('download-xlsx-btn').addEventListener('click', downloadFormattedReport);
+            document.getElementById('download-pdf-btn').addEventListener('click', downloadPdfReport);
+            
+            document.getElementById('save-analysis-btn').addEventListener('click', handleSaveAnalysis);
+            document.getElementById('speed-limit').addEventListener('change', () => {
+                document.getElementById('speeding-label').textContent = `Velocidade > ${document.getElementById('speed-limit').value}km/h`;
+            });
+            window.addEventListener('resize', () => { if (map) map.invalidateSize(); });
+            document.getElementById('grid-container').addEventListener('click', handleGridClick);
+            
+            document.getElementById('start-date').addEventListener('change', filtrarPorDataHora);
+            document.getElementById('start-time').addEventListener('change', filtrarPorDataHora);
+            document.getElementById('end-date').addEventListener('change', filtrarPorDataHora);
+            document.getElementById('end-time').addEventListener('change', filtrarPorDataHora);
+            document.getElementById('poi-radius').addEventListener('change', filtrarPorDataHora);
+
+
+            const userMenuBtn = document.getElementById('user-menu-btn');
+            const userMenuDropdown = document.getElementById('user-menu-dropdown');
+            userMenuBtn.addEventListener('click', () => userMenuDropdown.classList.toggle('hidden'));
+            
+            document.addEventListener('click', (e) => {
+                if (!userMenuBtn.contains(e.target) && !userMenuDropdown.contains(e.target)) {
+                    userMenuDropdown.classList.add('hidden');
+                }
+                if (!downloadBtn.contains(e.target) && !downloadDropdown.contains(e.target)) {
+                    downloadDropdown.classList.add('hidden');
+                }
+            });
+
+            document.getElementById('logout-menu-item').addEventListener('click', async () => {
+                const { error } = await supabaseClient.auth.signOut();
+                if (error) {
+                    console.error('Erro ao fazer logout:', error.message);
+                    showNotification('Erro ao desconectar.', 'error');
+                } else {
+                    location.reload();
+                }
+            });
+
+            document.getElementById('change-password-menu-item').addEventListener('click', showChangePasswordModal);
+            document.getElementById('change-icon-menu-item').addEventListener('click', () => document.getElementById('icon-input').click());
+            document.getElementById('icon-input').addEventListener('change', handleIconChange);
+
+            document.getElementById('poi-cancel-btn').addEventListener('click', hidePoiModal);
+            document.getElementById('poi-save-btn').addEventListener('click', savePoiFromModal);
+            document.getElementById('poi-modal-backdrop').addEventListener('click', (e) => { if (e.target.id === 'poi-modal-backdrop') hidePoiModal(); });
+            document.getElementById('password-cancel-btn').addEventListener('click', hideChangePasswordModal);
+            document.getElementById('password-save-btn').addEventListener('click', handleChangePassword);
+            document.getElementById('view-saved-analyses-btn').addEventListener('click', showSavedAnalysesModal);
+            document.getElementById('close-analyses-modal-btn').addEventListener('click', hideSavedAnalysesModal);
+            document.getElementById('saved-analyses-backdrop').addEventListener('click', (e) => { if (e.target.id === 'saved-analyses-backdrop') hideSavedAnalysesModal(); });
+            
+            document.getElementById('show-ranking-btn').addEventListener('click', showPerformanceModal);
+            document.getElementById('close-ranking-modal-btn').addEventListener('click', hidePerformanceModal);
+            document.getElementById('reset-ranking-btn').addEventListener('click', resetPerformanceData);
+
+            document.getElementById('open-panel-btn').addEventListener('click', openSidePanel);
+            document.getElementById('close-panel-btn').addEventListener('click', closeSidePanel);
+            document.getElementById('panel-backdrop').addEventListener('click', closeSidePanel);
+
+            document.getElementById('saved-analyses-list').addEventListener('click', handleSavedAnalysesActions);
+
+
+            const configFields = ['client-name','driver-name','plate-number','process-number','speed-limit','stop-time', 'poi-radius', 'weather-api-key'];
+            configFields.forEach(id => {
+                const el = document.getElementById(id);
+                if (el) {
+                    el.addEventListener('input', () => localStorage.setItem(id, el.value));
+                }
+            });
+        }
+
+        /********************* Notificações e Modais *********************/
+        function showNotification(message, type='info', duration = 5000) {
+            const banner = document.getElementById('notification-banner');
+            const messageEl = document.getElementById('notification-message');
+            const colors = {
+                success: 'bg-green-600',
+                error: 'bg-red-600',
+                info: 'bg-blue-600'
+            }
+            messageEl.textContent = message;
+            banner.className = `p-4 rounded-lg shadow-lg text-white ${colors[type] || colors.info}`;
+            banner.style.display = 'block';
+            banner.style.opacity = 1;
+            if(duration) {
+                setTimeout(hideNotification, duration);
+            }
+        }
+        function hideNotification() {
+            const banner = document.getElementById('notification-banner');
+            banner.style.opacity = 0;
+            setTimeout(() => banner.style.display = 'none', 400);
+        }
+        function showPoiModal(latlng) {
+            currentPoiLatLng = latlng;
+            document.getElementById('poi-modal-backdrop').style.display = 'flex';
+        }
+        function hidePoiModal() {
+            document.getElementById('poi-name-input').value = '';
+            document.getElementById('poi-modal-backdrop').style.display = 'none';
+            currentPoiLatLng = null;
+        }
+        function showChangePasswordModal() { document.getElementById('change-password-backdrop').style.display = 'flex'; }
+        function hideChangePasswordModal() {
+             document.getElementById('current-password-input').value = '';
+             document.getElementById('new-password-input').value = '';
+             document.getElementById('confirm-password-input').value = '';
+             document.getElementById('change-password-backdrop').style.display = 'none';
+        }
+        async function showSavedAnalysesModal() {
+            const listContainer = document.getElementById('saved-analyses-list');
+            listContainer.innerHTML = '<p class="text-muted">Carregando...</p>';
+            document.getElementById('saved-analyses-backdrop').style.display = 'flex';
+            try {
+                const analyses = await raptorDB.getAnalyses();
+                if (analyses.length === 0) {
+                    listContainer.innerHTML = '<p class="text-muted">Nenhuma análise salva encontrada.</p>';
+                    return;
+                }
+                listContainer.innerHTML = analyses.map(analysis => `
+                    <div class="p-3 rounded-lg border bg-gray-50 dark:bg-gray-800 dark:border-gray-700 flex justify-between items-center">
+                        <div>
+                            <p class="font-bold">${analysis.driver_name || 'Motorista não informado'}</p>
+                            <p class="text-sm text-muted">
+                                Placa: ${analysis.plate_number || 'N/A'} | 
+                                Processo: ${analysis.process_number || 'N/A'}
+                            </p>
+                            <p class="text-xs text-muted">Salvo em: ${new Date(analysis.saved_at).toLocaleString('pt-BR')}</p>
+                        </div>
+                        <div class="flex gap-2">
+                            <button data-id="${analysis.id}" data-action="load" class="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700">Carregar</button>
+                            <button data-id="${analysis.id}" data-action="delete" class="px-3 py-1 text-sm bg-red-600 text-white rounded hover:bg-red-700">Excluir</button>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (error) {
+                listContainer.innerHTML = `<p class="text-red-500">${error.message}</p>`;
+                console.error(error);
+            }
+        }
+        function hideSavedAnalysesModal() { document.getElementById('saved-analyses-backdrop').style.display = 'none'; }
+        
+        /********************* Lógica de Análises Salvas *********************/
+        async function handleSaveAnalysis() {
+            if (originalReportJson.length === 0) {
+                showNotification("Carregue um relatório antes de salvar.", "error");
+                return;
+            }
+            
+            // --- CORREÇÃO APLICADA AQUI ---
+            // O objeto agora usa 'snake_case' para corresponder às colunas do Supabase
+            const analysisData = {
+                saved_at: new Date().toISOString(),
+                client_name: document.getElementById('client-name').value,
+                driver_name: document.getElementById('driver-name').value,
+                plate_number: document.getElementById('plate-number').value || 'SemPlaca',
+                process_number: document.getElementById('process-number').value,
+                speed_limit: document.getElementById('speed-limit').value,
+                stop_time: document.getElementById('stop-time').value,
+                poi_radius: document.getElementById('poi-radius').value,
+                report_json: originalReportJson,
+                pois: JSON.parse(localStorage.getItem('savedPois') || '[]')
+            };
+            // --- FIM DA CORREÇÃO ---
+
+            try {
+                await raptorDB.saveAnalysis(analysisData);
+                showNotification("Análise salva com sucesso na nuvem!", "success");
+            } catch (error) {
+                showNotification(error.message, "error");
+                console.error(error);
+            }
+        }
+        async function handleSavedAnalysesActions(event) {
+            const target = event.target.closest('button');
+            if (!target) return;
+            const id = target.dataset.id;
+            const action = target.dataset.action;
+            if (action === 'load') {
+                try {
+                    const analysis = await raptorDB.getAnalysis(id);
+                    if (analysis) {
+                        loadAnalysisData(analysis);
+                        hideSavedAnalysesModal();
+                        showNotification(`Análise de ${analysis.plate_number} carregada.`, "success");
+                    }
+                } catch (error) {
+                    showNotification(error.message, "error");
+                }
+            } else if (action === 'delete') {
+                if (confirm("Tem certeza que deseja apagar esta análise? A ação não pode ser desfeita.")) {
+                    try {
+                        await raptorDB.deleteAnalysis(id);
+                        showNotification("Análise apagada.", "success");
+                        await showSavedAnalysesModal();
+                    } catch (error) {
+                        showNotification(error.message, "error");
+                    }
+                }
+            }
+        }
+        function loadAnalysisData(analysisData) {
+            clearAllData();
+            // --- CORREÇÃO APLICADA AQUI ---
+            // Lendo os dados com 'snake_case' que vêm do Supabase
+            document.getElementById('client-name').value = analysisData.client_name || '';
+            document.getElementById('driver-name').value = analysisData.driver_name || '';
+            document.getElementById('plate-number').value = analysisData.plate_number || '';
+            document.getElementById('process-number').value = analysisData.process_number || '';
+            document.getElementById('speed-limit').value = analysisData.speed_limit || '80';
+            document.getElementById('stop-time').value = analysisData.stop_time || '5';
+            document.getElementById('poi-radius').value = analysisData.poi_radius || '500';
+            
+            localStorage.setItem('savedPois', JSON.stringify(analysisData.pois || []));
+            loadPoisFromLocalStorage();
+
+            originalReportJson = analysisData.report_json;
+            // --- FIM DA CORREÇÃO ---
+            
+            const dataRowsJson = originalReportJson.slice(7);
+            reportHeaders = dataRowsJson[0].map(h => String(h || "").trim());
+            reportData = dataRowsJson.slice(1).reverse();
+            
+            document.getElementById('download-btn').disabled = false;
+            document.getElementById('save-analysis-btn').disabled = false;
+            document.getElementById('time-filter-container').classList.remove('hidden');
+            document.getElementById('start-date').value = '';
+            document.getElementById('start-time').value = '';
+            document.getElementById('end-date').value = '';
+            document.getElementById('end-time').value = '';
+
+            atualizarExibicao(reportData);
+        }
+
+        /********************* Processamento do ficheiro (XLSX) *********************/
+        function handleFileSelection(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            setLoading(true);
+            clearAllData();
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array', cellDates: true });
+                    const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+
+                    originalReportJson = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" });
+                    const dataRowsJson = originalReportJson.slice(7);
+
+                    if (dataRowsJson.length < 2) throw new Error("Ficheiro inválido ou sem dados.");
+                    reportHeaders = dataRowsJson[0].map(h => String(h || "").trim());
+                    reportData = dataRowsJson.slice(1).reverse();
+                    
+                    const latIndex = reportHeaders.findIndex(h => h.toUpperCase().includes('LATITUDE'));
+                    const lonIndex = reportHeaders.findIndex(h => h.toUpperCase().includes('LONGITUDE'));
+                    if (latIndex === -1 || lonIndex === -1) throw new Error("Colunas 'LATITUDE' e 'LONGITUDE' não encontradas.");
+                    
+                    const dateIndex = reportHeaders.findIndex(h => h.toUpperCase().includes('DATA/HORA'));
+                    if (dateIndex !== -1 && reportData.length > 0) {
+                        const firstDate = parseDate(reportData[0][dateIndex]);
+                        const lastDate = parseDate(reportData[reportData.length - 1][dateIndex]);
+
+                        if (!isNaN(firstDate) && !isNaN(lastDate)) {
+                            const toYYYYMMDD = (d) => d.toISOString().split('T')[0];
+                            const toHHMM = (d) => d.toTimeString().slice(0, 5);
+                            document.getElementById('start-date').value = toYYYYMMDD(firstDate);
+                            document.getElementById('start-time').value = toHHMM(firstDate);
+                            document.getElementById('end-date').value = toYYYYMMDD(lastDate);
+                            document.getElementById('end-time').value = toHHMM(lastDate);
+                        }
+                    }
+                    
+                    document.getElementById('time-filter-container').classList.remove('hidden');
+                    
+                    atualizarExibicao(reportData);
+
+                    document.getElementById('download-btn').disabled = false;
+                    document.getElementById('save-analysis-btn').disabled = false;
+                    showNotification('Relatório carregado com sucesso!', 'success');
+                } catch (error) {
+                    console.error("Erro ao processar o ficheiro:", error);
+                    showNotification(error.message || "Ocorreu um erro ao ler o ficheiro.", 'error');
+                    resetUI();
+                } finally {
+                    setLoading(false);
+                    event.target.value = '';
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+        function clearAllData() {
+            if (highlightMarker) map.removeLayer(highlightMarker);
+            highlightMarker = null;
+            vehiclePathLayer.clearLayers();
+            speedingLayerGroup.clearLayers();
+            stoppedLayerGroup.clearLayers();
+            Object.values(poiLayers).forEach(layer => layer.clearLayers());
+            addressCache.clear();
+            if (layerControl) { map.removeControl(layerControl); layerControl = null; }
+            document.getElementById('grid-container').innerHTML = '<div id="grid-placeholder" class="h-full w-full flex items-center justify-center bg-gray-100/50 dark:bg-gray-800/50 rounded-lg"><div class="flex items-center"><div class="spinner"></div><div class="text-muted">Nenhum dado para exibir.</div></div></div>';
+            showPlaceholders(true);
+            map.setView([-23.00, -47.06], 13);
+            updateDashboardUI({});
+            updateTripEventsCard([]); 
+            document.getElementById('timeline-section').style.display = 'none';
+            document.getElementById('timeline-events').innerHTML = '';
+            if (speedChart) {
+                speedChart.data.labels = [];
+                speedChart.data.datasets[0].data = [];
+                speedChart.update();
+            }
+        }
+        function resetUI() {
+            clearAllData();
+            document.getElementById('download-btn').disabled = true;
+            document.getElementById('save-analysis-btn').disabled = true;
+        }
+
+        /********************* LÓGICA DE FILTRO E ATUALIZAÇÃO *********************/
+        function filtrarPorDataHora() {
+            if (!reportData.length) return;
+
+            const startDateVal = document.getElementById('start-date').value;
+            const startTimeVal = document.getElementById('start-time').value;
+            const endDateVal = document.getElementById('end-date').value;
+            const endTimeVal = document.getElementById('end-time').value;
+
+            if (!startDateVal || !startTimeVal || !endDateVal || !endTimeVal) {
+                return;
+            }
+
+            const startDateTime = new Date(`${startDateVal}T${startTimeVal}`);
+            const endDateTime = new Date(`${endDateVal}T${endTimeVal}`);
+
+            if (isNaN(startDateTime.getTime()) || isNaN(endDateTime.getTime())) {
+                 showNotification("Formato de data ou hora inválido.", "error");
+                 return;
+            }
+
+            const dateIndex = reportHeaders.findIndex(h => h.toUpperCase().includes('DATA/HORA'));
+            if (dateIndex === -1) return;
+
+            filteredData = reportData.filter(row => {
+                const reportDate = parseDate(row[dateIndex]);
+                if (!reportDate || isNaN(reportDate.getTime())) return false;
+                
+                return reportDate.getTime() >= startDateTime.getTime() && reportDate.getTime() <= endDateTime.getTime();
+            });
+
+            atualizarExibicao(filteredData);
+        }
+
+        async function atualizarExibicao(dados) {
+            clearAllData();
+            loadPoisFromLocalStorage();
+            if(dados.length === 0) {
+                 showNotification("Nenhum dado encontrado para o período de tempo selecionado.", "error");
+                 updateTripEventsCard([]); 
+                 return;
+            }
+            
+            filteredData = [...dados];
+            
+            dashboardMetrics = calculateDashboardMetrics(originalReportJson, reportHeaders, dados);
+            updateDashboardUI(dashboardMetrics);
+            
+            const tripEvents = await buildTripEventsList(dados, reportHeaders);
+            updateTripEventsCard(tripEvents);
+
+            const { enrichedData, enrichedHeaders } = enrichDataForGrid(dados, reportHeaders);
+            const latIndex = reportHeaders.findIndex(h => h.toUpperCase().includes('LATITUDE'));
+            const lonIndex = reportHeaders.findIndex(h => h.toUpperCase().includes('LONGITUDE'));
+
+            processAndDisplayData(dados, latIndex, lonIndex);
+            displayDataGrid(enrichedHeaders, enrichedData, latIndex, lonIndex);
+            updateSpeedChart(dados, reportHeaders);
+            renderTimeline(enrichedData, enrichedHeaders, tripEvents.filter(e => e.type === 'poi_stop'));
+            setupLayerControl();
+            fetchWeatherForTrip(dados, reportHeaders);
+
+            // Lógica de Gamificação
+            const driverName = document.getElementById('driver-name').value;
+            if (driverName) {
+                const performanceScore = calculatePerformanceScore(enrichedData, enrichedHeaders);
+                updatePerformanceData(driverName, performanceScore);
+                showNotification(`${driverName} marcou ${performanceScore} pontos nesta viagem!`, 'success');
+            }
+        }
+
+        /********************* Mapa e camadas *********************/
+        function initializeMap() {
+            map = L.map('map', { zoomControl: false }).setView([-23.00, -47.06], 13);
+            L.control.zoom({ position: 'bottomright' }).addTo(map);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{y}/{y}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            }).addTo(map);
+
+            vehiclePathLayer.addTo(map);
+            speedingLayerGroup.addTo(map);
+            stoppedLayerGroup.addTo(map);
+            Object.values(poiLayers).forEach(layer => layer.addTo(map));
+
+            setTimeout(() => map.invalidateSize(), 100);
+        }
+
+        function getCustomIcon(type) {
+            const icons = {
+                start: { html: '▶', color: '#16a34a' },
+                end: { html: '■', color: '#dc2626' },
+                speeding: { html: '<i class="fa-solid fa-triangle-exclamation"></i>', color: '#f97316' },
+                stopped: { html: '<i class="fa-solid fa-hand"></i>', color: '#64748b' },
+                poi_cliente: { html: '<i class="fa-solid fa-user"></i>', color: '#3b82f6' },
+                poi_armazem: { html: '<i class="fa-solid fa-warehouse"></i>', color: '#8b5cf6' },
+                poi_portuario: { html: '<i class="fa-solid fa-ship"></i>', color: '#0d9488' },
+                poi_aeroportuario: { html: '<i class="fa-solid fa-plane"></i>', color: '#db2777' },
+                poi_geral: { html: '<i class="fa-solid fa-star"></i>', color: '#f59e0b' }
+            };
+            const iconData = icons[type] || icons.poi_geral;
+            return L.divIcon({
+                className: 'custom-map-icon',
+                html: `<div style="background-color: ${iconData.color};" class="w-full h-full flex items-center justify-center text-white text-base">${iconData.html}</div>`,
+                iconSize: [32, 32],
+                iconAnchor: [16, 16],
+                popupAnchor: [0, -16]
+            });
+        }
+
+        function setupLayerControl() {
+            if (layerControl) { map.removeControl(layerControl); }
+            const overlayMaps = {
+                "Rota do Veículo": vehiclePathLayer,
+                "Alertas de Velocidade": speedingLayerGroup,
+                "Paradas": stoppedLayerGroup,
+                "Clientes": poiLayers.poi_cliente,
+                "Armazéns": poiLayers.poi_armazem,
+                "Portos": poiLayers.poi_portuario,
+                "Aeroportos": poiLayers.poi_aeroportuario,
+                "Geral": poiLayers.poi_geral
+            };
+            layerControl = L.control.layers(null, overlayMaps, { collapsed: false, position: 'topright' }).addTo(map);
+        }
+
+        /********************* Gráfico *********************/
+        function initializeChart() {
+            const ctx = document.getElementById('speedChart').getContext('2d');
+            speedChart = new Chart(ctx, {
+                type: 'line',
+                data: { labels: [], datasets: [{ label: 'Velocidade (km/h)', data: [], borderWidth: 2.5, fill: true, tension: 0.4, pointRadius: 0 }] },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    scales: {
+                        x: { title: { display: true, text: 'Horário da Viagem' }, ticks: { maxRotation:0, minRotation:0, autoSkip:true, maxTicksLimit:10, color: 'var(--muted)' }, grid: { color: 'rgba(128,128,128,0.1)' } },
+                        y: { title: { display: true, text: 'Velocidade (km/h)' }, beginAtZero:true, ticks: { color: 'var(--muted)' }, grid: { color: 'rgba(128,128,128,0.1)' } }
+                    },
+                    plugins: { tooltip:{ mode:'index', intersect:false }, legend:{ display:false } },
+                    interaction: { mode: 'nearest', axis:'x', intersect:false }
+                }
+            });
+        }
+
+        /********************* Placeholders de carregamento *********************/
+        function showPlaceholders(show) {
+            const placeholders = ['map-placeholder', 'chart-placeholder', 'grid-placeholder'];
+            placeholders.forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.style.display = show ? 'flex' : 'none';
+            });
+        }
+        function setLoading(isLoading) {
+            showPlaceholders(isLoading);
+            document.getElementById('file-input').disabled = isLoading;
+        }
+
+        /********************* Ícone personalizado *********************/
+        function handleIconChange(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const imageUrl = e.target.result;
+                document.getElementById('header-icon').src = imageUrl;
+                try { localStorage.setItem('customRaptorIcon', imageUrl); } catch(e) { console.warn('Não foi possível salvar o ícone (localStorage).'); }
+            };
+            reader.readAsDataURL(file);
+        }
+        function loadCustomIcon() {
+            const customIcon = localStorage.getItem('customRaptorIcon');
+            if (customIcon) document.getElementById('header-icon').src = customIcon;
+        }
+
+        /********************* Persistência de POIs *********************/
+        function savePoisToLocalStorage() {
+            const pois = [];
+            Object.values(poiLayers).forEach(layerGroup => {
+                layerGroup.eachLayer(layer => {
+                    if (layer instanceof L.Marker && layer.options && layer.options._poiMeta) {
+                        const meta = layer.options._poiMeta;
+                        const poiToSave = {
+                            name: meta.name,
+                            type: meta.type,
+                            lat: meta.lat,
+                            lng: meta.lng,
+                            createdAt: meta.createdAt,
+                            address: meta.address
+                        };
+                        pois.push(poiToSave);
+                    }
+                });
+            });
+            try {
+                localStorage.setItem('savedPois', JSON.stringify(pois));
+            } catch (e) {
+                console.warn('Não foi possível salvar os POIs.', e);
+                showNotification("Erro ao salvar POIs. O armazenamento local pode estar cheio.", "error");
+            }
+        }
+
+        function loadPoisFromLocalStorage() {
+            Object.values(poiLayers).forEach(layer => layer.clearLayers());
+            const saved = localStorage.getItem('savedPois');
+            if (!saved) return;
+            try {
+                const pois = JSON.parse(saved);
+                pois.forEach(poi => createPoiMarker(poi));
+            } catch (e) { console.warn('Erro ao carregar POIs salvos', e); }
+        }
+        function clearPois() {
+            if (!confirm('Tem a certeza que deseja apagar todos os Pontos de Interesse salvos?')) return;
+            Object.values(poiLayers).forEach(layer => layer.clearLayers());
+            localStorage.removeItem('savedPois');
+            showNotification('Todos os POIs foram apagados.', 'success');
+             if (reportData.length > 0) {
+                atualizarExibicao(filteredData.length ? filteredData : reportData);
+            }
+        }
+
+        /********************* Métricas do Dashboard *********************/
+        function parseDate(dateInput) {
+            if (dateInput instanceof Date && !isNaN(dateInput)) return dateInput;
+            if (typeof dateInput === 'string') {
+                const str = dateInput.trim();
+                const match = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+                if (match) {
+                    let [, day, month, year, hour, minute, second] = match;
+                    if (year.length === 2) year = parseInt(year, 10) > 50 ? '19' + year : '20' + year;
+                    const isoString = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T${hour.padStart(2, '0')}:${minute.padStart(2, '0')}:${(second || '00').padStart(2, '0')}`;
+                    const d = new Date(isoString);
+                    if (!isNaN(d)) return d;
+                }
+            }
+            if (typeof dateInput === 'number') {
+                const d = new Date((dateInput - 25569) * 86400000);
+                if (!isNaN(d)) return d;
+            }
+            const d = new Date(dateInput);
+            if (!isNaN(d)) return d;
+            return NaN;
+        }
+        function formatTime(totalSeconds) {
+            if (isNaN(totalSeconds) || totalSeconds < 0) return '';
+            const h = Math.floor(totalSeconds / 3600).toString().padStart(2, '0');
+            const m = Math.floor((totalSeconds % 3600) / 60).toString().padStart(2, '0');
+            const s = Math.floor(totalSeconds % 60).toString().padStart(2, '0');
+            return `${h}:${m}:${s}`;
+        }
+        function calculateDashboardMetrics(fullJson, headers, data) {
+            let totalKm = '- KM', plate = '';
+            const headerRow = fullJson[4] || [];
+            headerRow.forEach(cell => {
+                const cellStr = String(cell);
+                if (cellStr.includes('Total km percorrido:')) totalKm = cellStr.split(':')[1].trim();
+                if (cellStr.includes('Placa:')) plate = cellStr.split(':')[1].trim();
+            });
+
+            const kmhIndex = headers.findIndex(h => h.toUpperCase().includes('KM/H'));
+            const dateIndex = headers.findIndex(h => h.toUpperCase().includes('DATA/HORA'));
+            const ignitionIndex = headers.findIndex(h => h.toUpperCase().includes('IGNIÇÃO'));
+            const speedLimit = parseFloat(document.getElementById('speed-limit').value) || 80;
+
+            let totalIgnitionOnTimeSeconds = 0, speedingCount = 0;
+            let maxSpeed = 0, movingSpeedSum = 0, movingSpeedCount = 0, totalDurationSeconds = 0;
+
+            if (data.length > 1) {
+                const firstPointDate = parseDate(data[0][dateIndex]);
+                const lastPointDate = parseDate(data[data.length - 1][dateIndex]);
+                if (!isNaN(firstPointDate) && !isNaN(lastPointDate)) {
+                    totalDurationSeconds = (lastPointDate.getTime() - firstPointDate.getTime()) / 1000;
+                }
+            }
+            
+            for(let i = 0; i < data.length; i++) {
+                const currentRow = data[i];
+                const currentSpeed = (kmhIndex !== -1) ? parseFloat(String(currentRow[kmhIndex]).replace(',', '.')) : 0;
+
+                if (!isNaN(currentSpeed)) {
+                    if (currentSpeed > maxSpeed) maxSpeed = currentSpeed;
+                    if (currentSpeed > speedLimit) speedingCount++;
+                    if (currentSpeed > 0) {
+                        movingSpeedSum += currentSpeed;
+                        movingSpeedCount++;
+                    }
+                }
+                
+                if (String(currentRow[ignitionIndex]).trim().toLowerCase() === 'sim' && i > 0) {
+                     const prevRow = data[i - 1];
+                     const time1 = parseDate(prevRow[dateIndex]);
+                     const time2 = parseDate(currentRow[dateIndex]);
+                     if (!isNaN(time1) && !isNaN(time2)) {
+                        const diffSeconds = (time2.getTime() - time1.getTime()) / 1000;
+                        totalIgnitionOnTimeSeconds += diffSeconds;
+                     }
+                }
+            }
+
+            const avgSpeed = movingSpeedCount > 0 ? (movingSpeedSum / movingSpeedCount) : 0;
+
+            return { totalKm, ignitionOnTime: formatTime(totalIgnitionOnTimeSeconds), plate, speedingCount, maxSpeed: maxSpeed.toFixed(0), avgSpeed: avgSpeed.toFixed(0), totalDuration: formatTime(totalDurationSeconds) };
+        }
+        function updateDashboardUI(metrics = {}) {
+            document.getElementById('total-km').textContent = metrics.totalKm || '- KM';
+            document.getElementById('ignition-on-time').textContent = metrics.ignitionOnTime || '--:--:--';
+            document.getElementById('plate-number').value = metrics.plate || (localStorage.getItem('plate-number') || '');
+            const speedLimit = document.getElementById('speed-limit').value;
+            document.getElementById('speeding-label').textContent = `Velocidade > ${speedLimit}km/h`;
+            document.getElementById('speeding-count').textContent = `${metrics.speedingCount || 0} vezes`;
+            document.getElementById('total-duration').textContent = metrics.totalDuration || '--:--:--';
+            document.getElementById('max-speed').textContent = `${metrics.maxSpeed || '-'} km/h`;
+            document.getElementById('avg-speed').textContent = `${metrics.avgSpeed || '-'} km/h`;
+        }
+        
+        /********************* Exibir rota e marcadores *********************/
+        function processAndDisplayData(data, latIndex, lonIndex) {
+            const latlngs = data.map(row => {
+                const lat = parseFloat(String(row[latIndex]).replace(',', '.'));
+                const lon = parseFloat(String(row[lonIndex]).replace(',', '.'));
+                return !isNaN(lat) && !isNaN(lon) ? [lat, lon] : null;
+            }).filter(Boolean);
+
+            if (latlngs.length === 0) {
+                showPlaceholders(true);
+                return;
+            };
+            showPlaceholders(false);
+
+            const polyline = L.polyline(latlngs, { color: 'var(--accent)', weight: 5, opacity: 0.9 }).addTo(vehiclePathLayer);
+            L.marker(latlngs[0], { icon: getCustomIcon('start') }).addTo(vehiclePathLayer).bindPopup('<b>Início da Rota</b>');
+            L.marker(latlngs[latlngs.length - 1], { icon: getCustomIcon('end') }).addTo(vehiclePathLayer).bindPopup('<b>Fim da Rota</b>');
+
+            const kmhIndex = reportHeaders.findIndex(h => h.toUpperCase().includes('KM/H'));
+            const dateIndex = reportHeaders.findIndex(h => h.toUpperCase().includes('DATA/HORA'));
+            const speedLimit = parseFloat(document.getElementById('speed-limit').value) || 80;
+            const minStopTimeMinutes = parseFloat(document.getElementById('stop-time').value) || 5;
+            const minStopTimeSeconds = minStopTimeMinutes * 60;
+
+            let i = 0;
+            while (i < data.length) {
+                const row = data[i];
+                const lat = parseFloat(String(row[latIndex]).replace(',', '.'));
+                const lon = parseFloat(String(row[lonIndex]).replace(',', '.'));
+                const speed = (kmhIndex !== -1) ? parseFloat(String(row[kmhIndex]).replace(',', '.')) : -1;
+                const dateObj = (dateIndex !== -1) ? parseDate(row[dateIndex]) : null;
+
+                if (speed > speedLimit && !isNaN(lat) && !isNaN(lon)) {
+                    const marker = L.marker([lat, lon], { icon: getCustomIcon('speeding') }).addTo(speedingLayerGroup);
+                    const formattedTimestamp = dateObj ? dateObj.toLocaleString('pt-BR') : 'N/A';
+                    const popupContent = `<b>Excesso de Velocidade</b><br>Velocidade: ${speed.toFixed(0)} km/h<br>Horário: ${formattedTimestamp}`;
+                    marker.bindPopup(popupContent);
+                    marker.on('popupopen', () => fetchAddressForPopup(marker, popupContent));
+                }
+
+                if (speed === 0 && dateIndex !== -1) {
+                    let stopEndIndex = i;
+                    while (stopEndIndex + 1 < data.length && parseFloat(String(data[stopEndIndex + 1][kmhIndex]).replace(',', '.')) === 0) {
+                        stopEndIndex++;
+                    }
+
+                    const startTime = dateObj;
+                    const endTime = parseDate(data[stopEndIndex][dateIndex]);
+                    if(!isNaN(startTime) && !isNaN(endTime)) {
+                        const durationSeconds = (endTime - startTime) / 1000;
+                        if (durationSeconds > minStopTimeSeconds && !isNaN(lat) && !isNaN(lon)) {
+                             const marker = L.marker([lat, lon], { icon: getCustomIcon('stopped') }).addTo(stoppedLayerGroup);
+                             const formattedStartTime = startTime.toLocaleString('pt-BR');
+                             const popupContent = `<b>Veículo Parado</b><br>Duração: ${formatTime(durationSeconds)}<br>Início: ${formattedStartTime}`;
+                             marker.bindPopup(popupContent);
+                             marker.on('popupopen', () => fetchAddressForPopup(marker, popupContent));
+                        }
+                    }
+                    i = stopEndIndex;
+                }
+                i++;
+            }
+
+            map.fitBounds(polyline.getBounds().pad(0.1));
+            map.invalidateSize();
+        }
+
+        /********************* Tabela interativa *********************/
+        function enrichDataForGrid(data, headers) {
+            const enrichedHeaders = [...headers, 'POI Próximo', 'Duração da Parada', 'Endereço'];
+            const latIndex = headers.findIndex(h => h.toUpperCase().includes('LATITUDE'));
+            const lonIndex = headers.findIndex(h => h.toUpperCase().includes('LONGITUDE'));
+            const kmhIndex = headers.findIndex(h => h.toUpperCase().includes('KM/H'));
+            const dateIndex = headers.findIndex(h => h.toUpperCase().includes('DATA/HORA'));
+            const minStopTimeMinutes = parseFloat(document.getElementById('stop-time').value) || 5;
+            const minStopTimeSeconds = minStopTimeMinutes * 60;
+            const POI_DISTANCE_THRESHOLD = parseFloat(document.getElementById('poi-radius').value) || 500;
+
+            const pois = [];
+            Object.values(poiLayers).forEach(layerGroup => {
+                layerGroup.eachLayer(layer => {
+                    if (layer.options && layer.options._poiMeta) {
+                        pois.push({ 
+                            name: layer.options._poiMeta.name, 
+                            latlng: L.latLng(layer.options._poiMeta.lat, layer.options._poiMeta.lng) 
+                        });
+                    }
+                });
+            });
+
+            const findClosestPoi = (lat, lon) => {
+                if (pois.length === 0 || isNaN(lat) || isNaN(lon)) return '';
+                const pointLatLng = L.latLng(lat, lon);
+                let minDistance = Infinity;
+                let closestPoiName = '';
+                pois.forEach(poi => {
+                    const distance = pointLatLng.distanceTo(poi.latlng);
+                    if (distance < minDistance) {
+                        minDistance = distance;
+                        if (distance < POI_DISTANCE_THRESHOLD) {
+                            closestPoiName = poi.name;
+                        }
+                    }
+                });
+                return closestPoiName;
+            };
+
+            const finalEnrichedData = [];
+            let i = 0;
+            while (i < data.length) {
+                const currentRow = data[i];
+                const lat = parseFloat(String(currentRow[latIndex]).replace(',', '.'));
+                const lon = parseFloat(String(currentRow[lonIndex]).replace(',', '.'));
+                const speed = (kmhIndex !== -1) ? parseFloat(String(currentRow[kmhIndex]).replace(',', '.')) : -1;
+                const poiName = findClosestPoi(lat, lon);
+                let durationFormatted = '';
+
+                if (speed === 0 && dateIndex !== -1) {
+                    let stopEndIndex = i;
+                    while (stopEndIndex + 1 < data.length && parseFloat(String(data[stopEndIndex + 1][kmhIndex]).replace(',', '.')) === 0) { stopEndIndex++; }
+                    const startTime = parseDate(currentRow[dateIndex]);
+                    const endTime = parseDate(data[stopEndIndex][dateIndex]);
+                    if (!isNaN(startTime) && !isNaN(endTime)) {
+                        const durationSeconds = (endTime.getTime() - startTime.getTime()) / 1000;
+                        if (durationSeconds > minStopTimeSeconds) { durationFormatted = formatTime(durationSeconds); }
+                    }
+                    finalEnrichedData.push([...currentRow, poiName, durationFormatted, '']);
+                    for (let j = i + 1; j <= stopEndIndex; j++) {
+                        const subsequentRow = data[j];
+                        finalEnrichedData.push([...subsequentRow, findClosestPoi(parseFloat(String(subsequentRow[latIndex]).replace(',', '.')), parseFloat(String(subsequentRow[lonIndex]).replace(',', '.'))), '', '']);
+                    }
+                    i = stopEndIndex + 1;
+                } else {
+                    finalEnrichedData.push([...currentRow, poiName, durationFormatted, '']);
+                    i++;
+                }
+            }
+            return { enrichedData: finalEnrichedData, enrichedHeaders };
+        }
+        function displayDataGrid(headers, data, latIndex, lonIndex) {
+            const container = document.getElementById('grid-container');
+            container.innerHTML = '';
+            gridRowToTimelineEventMap.clear();
+
+            const columnsToHide = [
+                'TEMP. 1', 'TEMP. 2', 'TEMP. 3', 'BATERIA', 'SATÉLITE',
+                'BLOQUEIO', 'MEMÓRIA', 'CARGA BATERIA', 'IMÃ (MXT100)'
+            ].map(h => h.toUpperCase());
+
+            const hiddenIndices = headers.map((h, i) => columnsToHide.includes(String(h).toUpperCase()) ? i : -1).filter(i => i !== -1);
+
+            const table = document.createElement('table');
+            table.className = 'w-full text-sm text-left';
+            const thead = document.createElement('thead');
+            thead.className = 'text-xs uppercase sticky top-0 z-10 border-b-2 bg-gray-50 dark:bg-gray-800';
+            let tr = document.createElement('tr');
+            headers.forEach((headerText, index) => {
+                if (hiddenIndices.includes(index)) return;
+                const th = document.createElement('th');
+                th.scope = 'col';
+                th.className = 'px-4 py-2 font-semibold';
+                th.textContent = headerText;
+                tr.appendChild(th);
+            });
+            thead.appendChild(tr);
+            table.appendChild(thead);
+
+            const tbody = document.createElement('tbody');
+            const speedLimit = parseFloat(document.getElementById('speed-limit').value) || 80;
+            const kmhIndex = headers.findIndex(h => h.toUpperCase().includes('KM/H'));
+            const durationIndex = headers.findIndex(h => h.toUpperCase().includes('DURAÇÃO DA PARADA'));
+
+            data.forEach((rowData, rowIndex) => {
+                const trBody = document.createElement('tr');
+                trBody.className = `border-b border-gray-200 dark:border-gray-700 hover:bg-blue-50 dark:hover:bg-gray-700`;
+                trBody.dataset.id = `row-${rowIndex}`;
+
+                const speed = (kmhIndex !== -1) ? parseFloat(String(rowData[kmhIndex]).replace(',', '.')) : 0;
+                const duration = (durationIndex !== -1) ? rowData[durationIndex] : '';
+                if (speed > speedLimit) trBody.classList.add('highlight-row-speed');
+                if (duration) trBody.classList.add('highlight-row-stop');
+
+                const lat = parseFloat(String(rowData[latIndex]).replace(',', '.'));
+                const lon = parseFloat(String(rowData[lonIndex]).replace(',', '.'));
+                if (!isNaN(lat) && !isNaN(lon)) {
+                    trBody.addEventListener('click', (e) => {
+                        if (!e.target.classList.contains('address-btn')) handleTableRowClick(lat, lon, trBody.dataset.id);
+                    });
+                }
+
+                rowData.forEach((cellData, cellIndex) => {
+                    if (hiddenIndices.includes(cellIndex)) return;
+                    const td = document.createElement('td');
+                    td.className = 'px-4 py-2 whitespace-nowrap';
+                    if (headers[cellIndex] === 'Endereço' && !isNaN(lat) && !isNaN(lon)) {
+                        td.innerHTML = `<button class="address-btn text-blue-600 hover:underline text-xs" data-lat="${lat}" data-lon="${lon}">Ver Endereço</button>`;
+                    } else {
+                        td.textContent = (cellData instanceof Date) ? cellData.toLocaleString('pt-BR') : cellData;
+                    }
+                    trBody.appendChild(td);
+                });
+                tbody.appendChild(trBody);
+            });
+            table.appendChild(tbody);
+            container.appendChild(table);
+        }
+        function handleTableRowClick(lat, lon, rowId) {
+            if (highlightMarker) map.removeLayer(highlightMarker);
+            highlightMarker = L.marker([lat, lon], { icon: getCustomIcon(''), zIndexOffset: 1000 }).addTo(map);
+            map.flyTo([lat, lon], 16);
+            
+            // Interação com a timeline
+            document.querySelectorAll('.timeline-event').forEach(ev => ev.style.transform = 'translate(-50%, -50%) scale(1)');
+            const timelineEvent = gridRowToTimelineEventMap.get(rowId);
+            if (timelineEvent) {
+                timelineEvent.style.transform = 'translate(-50%, -50%) scale(1.5)';
+            }
+        }
+        async function handleGridClick(event) {
+            if (event.target.classList.contains('address-btn')) {
+                const button = event.target;
+                const lat = parseFloat(button.dataset.lat);
+                const lon = parseFloat(button.dataset.lon);
+                const cell = button.parentElement;
+                cell.innerHTML = '<span class="text-xs text-muted">Carregando...</span>';
+                const address = await fetchAddress(lat, lon);
+                cell.textContent = address;
+            }
+        }
+
+        /********************* Geocodificação (Nominatim) e cache *********************/
+        async function fetchAddress(lat, lon) {
+            const key = `${lat.toFixed(5)},${lon.toFixed(5)}`;
+            if (addressCache.has(key)) return addressCache.get(key);
+            try {
+                const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=18`);
+                if (!response.ok) throw new Error('Falha na resposta da API');
+                const data = await response.json();
+                const address = data.display_name || 'Endereço não encontrado';
+                addressCache.set(key, address);
+                return address;
+            } catch (error) {
+                console.error("Erro na geocodificação:", error);
+                return "Não foi possível obter o endereço";
+            }
+        }
+        async function fetchAddressForPopup(marker, initialContent) {
+            const popup = marker.getPopup();
+            if (!popup) return;
+            if (popup.getContent().includes('Endereço:') || popup.getContent().includes('Endereço não encontrado')) return;
+            const latlng = marker.getLatLng();
+            popup.setContent(`${initialContent}<br><br><span class="text-xs text-muted">Buscando endereço...</span>`);
+            const address = await fetchAddress(latlng.lat, latlng.lng);
+            popup.setContent(`${initialContent}<br><br><b>Endereço:</b> ${address}`);
+        }
+
+        /********************* Gráfico de Velocidade com Gradiente *********************/
+        function updateSpeedChart(data, headers) {
+            const dateIndex = headers.findIndex(h => h.toUpperCase().includes('DATA/HORA'));
+            const kmhIndex = headers.findIndex(h => h.toUpperCase().includes('KM/H'));
+            if (dateIndex === -1 || kmhIndex === -1 || data.length === 0) {
+                showPlaceholders(true);
+                return;
+            }
+
+            const labels = data.map(row => {
+                const d = parseDate(row[dateIndex]);
+                return d ? d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+            });
+            const speedData = data.map(row => parseFloat(String(row[kmhIndex]).replace(',', '.')) || 0);
+
+            const ctx = document.getElementById('speedChart').getContext('2d');
+            const gradient = ctx.createLinearGradient(0, 0, 0, 400);
+            gradient.addColorStop(0, 'rgba(239, 68, 68, 0.5)'); 
+            gradient.addColorStop(0.5, 'rgba(250, 204, 21, 0.3)');
+            gradient.addColorStop(1, 'rgba(34, 197, 94, 0.2)');
+
+            speedChart.data.labels = labels;
+            speedChart.data.datasets[0].data = speedData;
+            speedChart.data.datasets[0].backgroundColor = gradient;
+            speedChart.data.datasets[0].borderColor = 'var(--accent)';
+            speedChart.update();
+        }
+
+        /********************* Modo POI (adicionar) e popup enriquecido *********************/
+        function togglePoiMode() {
+            poiModeActive = !poiModeActive;
+            const mapContainer = document.getElementById('map');
+            const button = document.getElementById('add-poi-btn');
+            if (poiModeActive) {
+                mapContainer.style.cursor = 'crosshair';
+                button.textContent = 'Clique no mapa para adicionar POI';
+                button.classList.add('bg-red-600');
+                map.once('click', handleMapClickForPoi);
+            } else {
+                mapContainer.style.cursor = '';
+                button.textContent = 'Adicionar POI';
+                button.classList.remove('bg-red-600');
+                map.off('click', handleMapClickForPoi);
+            }
+        }
+        function handleMapClickForPoi(e) {
+            showPoiModal(e.latlng);
+            togglePoiMode(); 
+        }
+        async function savePoiFromModal() {
+            const poiName = document.getElementById('poi-name-input').value;
+            const poiType = document.getElementById('poi-type-select').value;
+            if (!poiName || !currentPoiLatLng) {
+                showNotification("Por favor, insira um nome para o POI.", "error");
+                return;
+            }
+            const poiData = {
+                name: poiName,
+                type: poiType,
+                lat: currentPoiLatLng.lat,
+                lng: currentPoiLatLng.lng,
+                createdAt: new Date().toISOString(),
+                address: await fetchAddress(currentPoiLatLng.lat, currentPoiLatLng.lng)
+            };
+            createPoiMarker(poiData);
+            savePoisToLocalStorage();
+            hidePoiModal();
+            if (reportData.length > 0) {
+                showNotification("POI adicionado. Atualizando análise...", "info", 2000);
+                atualizarExibicao(filteredData.length ? filteredData : reportData);
+            }
+        }
+        function createPoiMarker(poiData) {
+            const layerGroup = poiLayers[poiData.type] || poiLayers.poi_geral;
+            
+            const radius = parseFloat(document.getElementById('poi-radius').value) || 500;
+            const circle = L.circle([poiData.lat, poiData.lng], {
+                radius: radius,
+                color: 'var(--accent)',
+                fillColor: 'var(--accent)',
+                fillOpacity: 0.1
+            }).addTo(layerGroup);
+
+            const marker = L.marker([poiData.lat, poiData.lng], { 
+                draggable: true, 
+                icon: getCustomIcon(poiData.type), 
+                _poiMeta: poiData 
+            }).addTo(layerGroup);
+
+            marker.associatedCircle = circle;
+            
+            const created = new Date(poiData.createdAt).toLocaleString('pt-BR');
+            let distanceText = '---';
+
+            if (vehiclePathLayer.getLayers().length > 0) {
+                 let minDistance = Infinity;
+                 vehiclePathLayer.eachLayer(layer => {
+                    if (layer instanceof L.Polyline) {
+                        const latlngs = layer.getLatLngs();
+                        latlngs.forEach(p => {
+                            const d = map.distance([poiData.lat, poiData.lng], p);
+                            if (d < minDistance) minDistance = d;
+                        });
+                    }
+                });
+                distanceText = isFinite(minDistance) ? `${Math.round(minDistance)} m` : '—';
+            }
+
+            marker.bindPopup(`<b>${poiData.name}</b><br><b>Tipo:</b> ${poiTypeMap[poiData.type] || 'Geral'}<br><b>Endereço:</b> ${poiData.address}<br><b>Distância até rota:</b> ${distanceText}<br><b>Criado em:</b> ${created}`);
+            marker.on('dragend', (e) => {
+                const newLatLng = e.target.getLatLng();
+                marker.options._poiMeta.lat = newLatLng.lat;
+                marker.options._poiMeta.lng = newLatLng.lng;
+                if(marker.associatedCircle) {
+                    marker.associatedCircle.setLatLng(newLatLng);
+                }
+                savePoisToLocalStorage();
+            });
+            return marker;
+        }
+
+        /********************* Exportar relatório (XLSX) *********************/
+        function downloadFormattedReport() {
+            const dataToExport = filteredData.length ? filteredData : reportData;
+            if (dataToExport.length === 0) {
+                showNotification("Por favor, carregue um ficheiro de relatório primeiro.", "error");
+                return;
+            }
+            const client = document.getElementById('client-name').value || 'Não informado';
+            const driver = document.getElementById('driver-name').value || 'Não informado';
+            const plate = document.getElementById('plate-number').value || 'Não informado';
+            const process = document.getElementById('process-number').value || 'Não informado';
+            const speedLimit = document.getElementById('speed-limit').value;
+            const metrics = calculateDashboardMetrics(originalReportJson, reportHeaders, dataToExport);
+            const { totalKm, ignitionOnTime, speedingCount } = metrics;
+            const { enrichedData, enrichedHeaders } = enrichDataForGrid(dataToExport, reportHeaders);
+            const wb = XLSX.utils.book_new();
+            const speedingText = speedingCount === 1 ? '1 vez' : `${speedingCount || 0} vezes`;
+            
+            const totalStopTime = enrichedData.reduce((acc, row) => {
+                const durationIndex = enrichedHeaders.indexOf('Duração da Parada');
+                if (durationIndex !== -1 && row[durationIndex]) {
+                    const timeParts = row[durationIndex].split(':');
+                    return acc + (+timeParts[0]) * 3600 + (+timeParts[1]) * 60 + (+timeParts[2]);
+                }
+                return acc;
+            }, 0);
+            
+            const reportSheetData = [
+                ['Cliente:', client],
+                ['Motorista:', driver, '', 'Placa:', plate],
+                ['Processo:', process],
+                ['Distância Total:', totalKm, '', 'Tempo Parado (>= '+document.getElementById('stop-time').value+' min):', formatTime(totalStopTime)],
+                ['Ignição Ligada:', ignitionOnTime, '', `Excesso de Velocidade (>${speedLimit}km/h):`, speedingText],
+                [],
+                enrichedHeaders
+            ].concat(enrichedData.map(row => row.map(cell => (cell instanceof Date) ? cell.toLocaleString('pt-BR') : cell)));
+            const wsReport = XLSX.utils.aoa_to_sheet(reportSheetData);
+            XLSX.utils.book_append_sheet(wb, wsReport, 'Rastreabilidade');
+            
+            const pois = [];
+            Object.values(poiLayers).forEach(layerGroup => {
+                layerGroup.eachLayer(layer => {
+                    if (layer.options._poiMeta) {
+                        const meta = layer.options._poiMeta;
+                        pois.push({ 
+                            Nome: meta.name, 
+                            Tipo: poiTypeMap[meta.type] || 'N/A',
+                            Latitude: meta.lat.toFixed(6), 
+                            Longitude: meta.lng.toFixed(6), 
+                            Endereço: meta.address 
+                        });
+                    }
+                });
+            });
+
+            if (pois.length > 0) {
+                const wsPoi = XLSX.utils.json_to_sheet(pois);
+                XLSX.utils.book_append_sheet(wb, wsPoi, 'Pontos de Interesse');
+            }
+            XLSX.writeFile(wb, `Relatorio_${plate}_${new Date().toISOString().split('T')[0]}.xlsx`);
+        }
+
+        /********************* Salvar/carregar configurações automaticamente *********************/
+        function loadSavedConfig() {
+            const fields = ['client-name','driver-name','plate-number','process-number','speed-limit','stop-time', 'poi-radius', 'weather-api-key'];
+            fields.forEach(id => {
+                const el = document.getElementById(id);
+                if (el) {
+                    const val = localStorage.getItem(id);
+                    if (val !== null) el.value = val;
+                }
+            });
+        }
+        
+        /********************* LÓGICA DE PARADAS EM POI (BASEADA NA IGNIÇÃO E CERCA ELETRÔNICA) *********************/
+        function findPoiStops(data, headers) {
+            const poiStops = [];
+            const pois = [];
+            const allowedTypes = ['poi_cliente', 'poi_armazem', 'poi_portuario', 'poi_aeroportuario'];
+
+            Object.values(poiLayers).forEach(layerGroup => {
+                layerGroup.eachLayer(layer => {
+                    if (layer instanceof L.Marker && layer.options && layer.options._poiMeta && allowedTypes.includes(layer.options._poiMeta.type)) {
+                        pois.push(layer.options._poiMeta);
+                    }
+                });
+            });
+
+            if (pois.length === 0 || data.length < 2) return [];
+
+            const latIndex = headers.findIndex(h => h.toUpperCase().includes('LATITUDE'));
+            const lonIndex = headers.findIndex(h => h.toUpperCase().includes('LONGITUDE'));
+            const ignitionIndex = headers.findIndex(h => h.toUpperCase().includes('IGNIÇÃO'));
+            const dateIndex = headers.findIndex(h => h.toUpperCase().includes('DATA/HORA'));
+            const POI_RADIUS = parseFloat(document.getElementById('poi-radius').value) || 500;
+
+            const poiStates = {};
+            pois.forEach(p => {
+                poiStates[p.name] = { isInside: false, arrivalEvent: null };
+            });
+
+            for (let i = 0; i < data.length; i++) {
+                const row = data[i];
+                const lat = parseFloat(String(row[latIndex]).replace(',', '.'));
+                const lon = parseFloat(String(row[lonIndex]).replace(',', '.'));
+                if (isNaN(lat) || isNaN(lon)) continue;
+
+                const pointLatLng = L.latLng(lat, lon);
+                const currentTime = parseDate(row[dateIndex]);
+                if (isNaN(currentTime)) continue;
+
+                for (const poi of pois) {
+                    const poiLatLng = L.latLng(poi.lat, poi.lng);
+                    const distance = pointLatLng.distanceTo(poiLatLng);
+                    const state = poiStates[poi.name];
+
+                    const currentlyInside = distance <= POI_RADIUS;
+
+                    if (currentlyInside && !state.isInside) { // Acabou de entrar
+                        state.isInside = true;
+                    } else if (!currentlyInside && state.isInside) { // Acabou de sair
+                        if (state.arrivalEvent) {
+                            const durationSeconds = (currentTime.getTime() - state.arrivalEvent.time.getTime()) / 1000;
+                            poiStops.push({
+                                name: poi.name,
+                                type: poi.type,
+                                poiType: poi.type,
+                                arrivalTime: state.arrivalEvent.time,
+                                departureTime: currentTime,
+                                duration: formatTime(durationSeconds),
+                                lat: poi.lat,
+                                lng: poi.lng,
+                                arrivalRowIndex: state.arrivalEvent.rowIndex,
+                                departureRowIndex: i
+                            });
+                        }
+                        state.isInside = false;
+                        state.arrivalEvent = null;
+                    }
+
+                    if (state.isInside && !state.arrivalEvent && i > 0) {
+                        const prevIgnition = String(data[i - 1][ignitionIndex]).trim().toLowerCase();
+                        const currentIgnition = String(row[ignitionIndex]).trim().toLowerCase();
+                        if (prevIgnition === 'sim' && currentIgnition === 'não') {
+                            state.arrivalEvent = { time: currentTime, rowIndex: i };
+                        }
+                    }
+                }
+            }
+            return poiStops;
+        }
+
+        /********************* ATUALIZAÇÃO: Lógica de Eventos da Viagem com Tempo de Deslocamento *********************/
+        async function buildTripEventsList(data, headers) {
+            const latIndex = headers.findIndex(h => h.toUpperCase().includes('LATITUDE'));
+            const lonIndex = headers.findIndex(h => h.toUpperCase().includes('LONGITUDE'));
+            const dateIndex = headers.findIndex(h => h.toUpperCase().includes('DATA/HORA'));
+
+            let baseEvents = findPoiStops(data, headers).map(stop => ({
+                ...stop,
+                type: 'poi_stop',
+                time: stop.arrivalTime // Unifica o campo de tempo para ordenação
+            }));
+
+            // Adicionar evento de início
+            if (data.length > 0) {
+                let startRow = null;
+                for (let i = 0; i < data.length; i++) {
+                    if (!isNaN(parseDate(data[i][dateIndex]))) {
+                        startRow = data[i];
+                        break;
+                    }
+                }
+                if (startRow) {
+                    baseEvents.push({
+                        type: 'start',
+                        name: 'Início da Viagem',
+                        time: parseDate(startRow[dateIndex]),
+                        lat: parseFloat(String(startRow[latIndex]).replace(',', '.')),
+                        lng: parseFloat(String(startRow[lonIndex]).replace(',', '.'))
+                    });
+                }
+            }
+
+            // Adicionar evento de fim
+            if (data.length > 1) {
+                let endRow = null;
+                for (let i = data.length - 1; i >= 0; i--) {
+                    if (!isNaN(parseDate(data[i][dateIndex]))) {
+                        endRow = data[i];
+                        break;
+                    }
+                }
+                if (endRow) {
+                    baseEvents.push({
+                        type: 'end',
+                        name: 'Fim da Viagem',
+                        time: parseDate(endRow[dateIndex]),
+                        lat: parseFloat(String(endRow[latIndex]).replace(',', '.')),
+                        lng: parseFloat(String(endRow[lonIndex]).replace(',', '.'))
+                    });
+                }
+            }
+
+            baseEvents.sort((a, b) => a.time - b.time);
+
+            const finalEvents = [];
+            for (let i = 0; i < baseEvents.length; i++) {
+                const currentEvent = baseEvents[i];
+                finalEvents.push(currentEvent);
+
+                if (currentEvent.type === 'poi_stop') {
+                    const nextEvent = baseEvents[i + 1];
+                    if (nextEvent) {
+                        const travelTimeSeconds = (nextEvent.time.getTime() - currentEvent.departureTime.getTime()) / 1000;
+                        if (travelTimeSeconds > 0) {
+                            finalEvents.push({
+                                type: 'travel',
+                                from: currentEvent.name,
+                                to: nextEvent.name,
+                                duration: formatTime(travelTimeSeconds),
+                                time: currentEvent.departureTime
+                            });
+                        }
+                    }
+                } 
+                else if (currentEvent.type === 'start') {
+                    const nextEvent = baseEvents[i + 1];
+                    if (nextEvent) {
+                        const travelTimeSeconds = (nextEvent.time.getTime() - currentEvent.time.getTime()) / 1000;
+                        if (travelTimeSeconds > 0) {
+                             finalEvents.push({
+                                type: 'travel',
+                                from: currentEvent.name,
+                                to: nextEvent.name,
+                                duration: formatTime(travelTimeSeconds),
+                                time: currentEvent.time
+                            });
+                        }
+                    }
+                }
+            }
+             finalEvents.sort((a, b) => {
+                const timeA = a.type === 'poi_stop' ? a.arrivalTime : a.time;
+                const timeB = b.type === 'poi_stop' ? b.arrivalTime : b.time;
+                return timeA - timeB;
+            });
+            
+            return finalEvents;
+        }
+
+        function updateTripEventsCard(events) {
+            const listContainer = document.getElementById('trip-events-list');
+            if (!listContainer) return;
+
+            listContainer.innerHTML = ''; 
+
+            if (events.length === 0) {
+                listContainer.innerHTML = '<p class="text-sm text-muted">Nenhum evento na viagem.</p>';
+            } else {
+                const eventIcons = {
+                    start: 'fa-play',
+                    poi_stop: 'fa-map-marker-alt',
+                    end: 'fa-flag-checkered',
+                    travel: 'fa-road',
+                    poi_cliente: 'fa-user',
+                    poi_armazem: 'fa-warehouse',
+                    poi_portuario: 'fa-ship',
+                    poi_aeroportuario: 'fa-plane'
+                };
+
+                events.forEach(event => {
+                    const eventElement = document.createElement('div');
+                    eventElement.className = 'flex items-center gap-3 p-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700/50 cursor-pointer transition-colors';
+                    
+                    let iconClass, title, details = '', duration = '';
+                    
+                    switch(event.type) {
+                        case 'start':
+                            iconClass = eventIcons.start;
+                            title = 'Início da Viagem';
+                            details = event.time.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+                            eventElement.title = `Clique para centralizar no Início`;
+                            break;
+                        case 'poi_stop':
+                            iconClass = eventIcons[event.poiType] || eventIcons.poi_stop;
+                            title = event.name;
+                            const arrivalTimeStr = event.arrivalTime.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+                            const departureTimeStr = event.departureTime.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+                            details = `Chegada: ${arrivalTimeStr} | Saída: ${departureTimeStr}`;
+                            duration = `<span class="text-sm font-mono bg-gray-200 dark:bg-gray-700 px-2 py-0.5 rounded-md" title="Tempo de Permanência">${event.duration}</span>`;
+                            eventElement.title = `Clique para centralizar em ${event.name}`;
+                            break;
+                        case 'travel':
+                            iconClass = eventIcons.travel;
+                            title = `Deslocamento para ${event.to}`;
+                            details = `De: ${event.from}`;
+                            duration = `<span class="text-sm font-mono bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 px-2 py-0.5 rounded-md" title="Tempo de Deslocamento">${event.duration}</span>`;
+                            eventElement.style.opacity = '0.8';
+                            eventElement.classList.remove('cursor-pointer');
+                            break;
+                        case 'end':
+                            iconClass = eventIcons.end;
+                            title = 'Fim da Viagem';
+                            details = event.time.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+                            eventElement.title = `Clique para centralizar no Fim`;
+                            break;
+                    }
+
+                    eventElement.innerHTML = `
+                        <i class="fa-solid ${iconClass} w-4 text-center text-muted"></i>
+                        <div class="flex-grow">
+                            <p class="text-sm font-semibold leading-tight">${title}</p>
+                            ${details ? `<p class="text-xs text-muted leading-tight">${details}</p>` : ''}
+                        </div>
+                        ${duration}
+                    `;
+
+                    if (event.type !== 'travel') {
+                         eventElement.addEventListener('click', () => {
+                            map.flyTo([event.lat, event.lng], 17);
+                        });
+                    }
+
+                    listContainer.appendChild(eventElement);
+                });
+            }
+        }
+
+
+        /********************* Funções de Senha (simulado) *********************/
+        async function handleChangePassword() {
+            const newPass = document.getElementById('new-password-input').value;
+            
+            if (!newPass || newPass.length < 6) {
+                showNotification('A nova senha deve ter pelo menos 6 caracteres.', 'error');
+                return;
+            }
+            if (newPass !== document.getElementById('confirm-password-input').value) {
+                showNotification('As novas senhas não coincidem.', 'error');
+                return;
+            }
+            
+            const { data, error } = await supabaseClient.auth.updateUser({ password: newPass });
+
+            if (error) {
+                showNotification(`Erro ao alterar senha: ${error.message}`, 'error');
+            } else {
+                showNotification('Senha alterada com sucesso!', 'success');
+                hideChangePasswordModal();
+            }
+        }
+
+        /********************* Gamificação: Ranking de Performance *********************/
+        function calculatePerformanceScore(data, headers) {
+            let score = 1000;
+            const speedingPenalty = 20;
+            const unauthorizedStopPenalty = 50;
+            const perfectTripBonus = 100;
+
+            const kmhIndex = headers.findIndex(h => h.toUpperCase().includes('KM/H'));
+            const stopDurationIndex = headers.findIndex(h => h.toUpperCase().includes('DURAÇÃO DA PARADA'));
+            const poiIndex = headers.findIndex(h => h.toUpperCase().includes('POI PRÓXIMO'));
+            const speedLimit = parseFloat(document.getElementById('speed-limit').value) || 80;
+            
+            let speedingEvents = 0;
+
+            data.forEach(row => {
+                const speed = parseFloat(String(row[kmhIndex]).replace(',', '.')) || 0;
+                if (speed > speedLimit) {
+                    score -= speedingPenalty;
+                    speedingEvents++;
+                }
+
+                const stopDuration = row[stopDurationIndex];
+                const poiName = row[poiIndex];
+                if (stopDuration && !poiName) {
+                    score -= unauthorizedStopPenalty;
+                }
+            });
+
+            if (speedingEvents === 0) {
+                score += perfectTripBonus;
+            }
+
+            return Math.max(0, score);
+        }
+
+        function getPerformanceData() {
+            try {
+                const data = localStorage.getItem('raptorPerformanceRanking');
+                return data ? JSON.parse(data) : {};
+            } catch (e) {
+                return {};
+            }
+        }
+
+        function savePerformanceData(data) {
+            localStorage.setItem('raptorPerformanceRanking', JSON.stringify(data));
+        }
+
+        function updatePerformanceData(driverName, score) {
+            const performanceData = getPerformanceData();
+            if (!performanceData[driverName]) {
+                performanceData[driverName] = 0;
+            }
+            performanceData[driverName] += score;
+            savePerformanceData(performanceData);
+        }
+
+        function showPerformanceModal() {
+            const data = getPerformanceData();
+            const container = document.getElementById('performance-ranking-list');
+            const sortedDrivers = Object.entries(data).sort(([, a], [, b]) => b - a);
+
+            if (sortedDrivers.length === 0) {
+                container.innerHTML = '<p class="text-muted">Nenhum dado de performance encontrado. Carregue um relatório com o nome do motorista para começar.</p>';
+            } else {
+                let tableHTML = '<table class="w-full text-left"><thead><tr class="border-b"><th class="p-2">#</th><th class="p-2">Motorista</th><th class="p-2">Pontuação</th></tr></thead><tbody>';
+                sortedDrivers.forEach(([name, score], index) => {
+                    tableHTML += `<tr class="border-b"><td class="p-2">${index + 1}</td><td class="p-2">${name}</td><td class="p-2 font-bold">${score}</td></tr>`;
+                });
+                tableHTML += '</tbody></table>';
+                container.innerHTML = tableHTML;
+            }
+            document.getElementById('performance-ranking-backdrop').style.display = 'flex';
+        }
+
+        function hidePerformanceModal() {
+            document.getElementById('performance-ranking-backdrop').style.display = 'none';
+        }
+
+        function resetPerformanceData() {
+            if (confirm("Tem certeza que deseja resetar todo o ranking de performance? Esta ação não pode ser desfeita.")) {
+                localStorage.removeItem('raptorPerformanceRanking');
+                showPerformanceModal();
+                showNotification("Ranking resetado com sucesso.", "success");
+            }
+        }
+
+        /********************* Linha do Tempo Interativa *********************/
+        function renderTimeline(data, headers, poiStops) {
+            const timelineSection = document.getElementById('timeline-section');
+            const container = document.getElementById('timeline-events');
+            container.innerHTML = '';
+            if (data.length < 2) {
+                timelineSection.style.display = 'none';
+                return;
+            }
+
+            const dateIndex = headers.findIndex(h => h.toUpperCase().includes('DATA/HORA'));
+            const kmhIndex = headers.findIndex(h => h.toUpperCase().includes('KM/H'));
+            const latIndex = headers.findIndex(h => h.toUpperCase().includes('LATITUDE'));
+            const lonIndex = headers.findIndex(h => h.toUpperCase().includes('LONGITUDE'));
+            const speedLimit = parseFloat(document.getElementById('speed-limit').value) || 80;
+
+            let startDateObj, endDateObj;
+
+            for (let i = 0; i < data.length; i++) {
+                const d = parseDate(data[i][dateIndex]);
+                if (!isNaN(d)) {
+                    startDateObj = d;
+                    break;
+                }
+            }
+
+            for (let i = data.length - 1; i >= 0; i--) {
+                const d = parseDate(data[i][dateIndex]);
+                if (!isNaN(d)) {
+                    endDateObj = d;
+                    break;
+                }
+            }
+
+            if (!startDateObj || !endDateObj || isNaN(startDateObj) || isNaN(endDateObj)) {
+                console.error("Não foi possível encontrar datas válidas para a linha do tempo. A linha do tempo não será exibida.");
+                timelineSection.style.display = 'none';
+                return;
+            }
+            
+            timelineSection.style.display = 'block';
+            const startTime = startDateObj.getTime();
+            const totalDuration = endDateObj.getTime() - startTime;
+
+            if (totalDuration <= 0) return;
+
+            const createEvent = (type, text, timestamp, rowIndex, lat, lon) => {
+                const eventDateObj = parseDate(timestamp);
+                if (isNaN(eventDateObj)) return null;
+                
+                const eventTime = eventDateObj.getTime();
+                const position = ((eventTime - startTime) / totalDuration) * 100;
+
+                const eventEl = document.createElement('div');
+                eventEl.className = 'timeline-event';
+                eventEl.style.left = `${Math.max(0, Math.min(100, position))}%`;
+
+                const iconInfo = {
+                    start: { icon: 'fa-play', color: '#16a34a' },
+                    end: { icon: 'fa-flag-checkered', color: '#dc2626' },
+                    speeding: { icon: 'fa-triangle-exclamation', color: '#f97316' },
+                    arrival: { icon: 'fa-key', color: '#64748b' },
+                    departure: { icon: 'fa-arrow-right-from-bracket', color: '#22c55e' }
+                };
+
+                const iconData = iconInfo[type];
+                eventEl.style.backgroundColor = iconData.color;
+                eventEl.innerHTML = `<i class="fa-solid ${iconData.icon}"></i><span class="tooltip">${text}</span>`;
+                
+                eventEl.addEventListener('click', () => {
+                    const rowEl = document.querySelector(`tr[data-id="row-${rowIndex}"]`);
+                    if (rowEl) {
+                        rowEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        handleTableRowClick(lat, lon, `row-${rowIndex}`);
+                    }
+                });
+                
+                gridRowToTimelineEventMap.set(`row-${rowIndex}`, eventEl);
+                return eventEl;
+            };
+
+            let event = createEvent('start', `Início: ${data[0][dateIndex]}`, data[0][dateIndex], 0, data[0][latIndex], data[0][lonIndex]);
+            if(event) container.appendChild(event);
+
+            poiStops.forEach(stop => {
+                let arrivalEvent = createEvent('arrival', `Chegada (Ignição OFF) em ${stop.name}`, stop.arrivalTime, stop.arrivalRowIndex, stop.lat, stop.lng);
+                if(arrivalEvent) container.appendChild(arrivalEvent);
+                let departureEvent = createEvent('departure', `Saída (Raio) de ${stop.name}`, stop.departureTime, stop.departureRowIndex, stop.lat, stop.lng);
+                if(departureEvent) container.appendChild(departureEvent);
+            });
+
+            data.forEach((row, index) => {
+                const speed = parseFloat(String(row[kmhIndex]).replace(',', '.')) || 0;
+                if (speed > speedLimit) {
+                    event = createEvent('speeding', `Velocidade: ${speed.toFixed(0)} km/h`, row[dateIndex], index, row[latIndex], row[lonIndex]);
+                    if(event) container.appendChild(event);
+                }
+            });
+
+            const lastIndex = data.length - 1;
+            event = createEvent('end', `Fim: ${data[lastIndex][dateIndex]}`, data[lastIndex][dateIndex], lastIndex, data[lastIndex][latIndex], data[lastIndex][lonIndex]);
+            if(event) container.appendChild(event);
+        }
+
+
+        /********************* Exportar Relatório para PDF *********************/
+        async function downloadPdfReport() {
+            showNotification('Gerando PDF... Buscando endereços, isto pode demorar um pouco.', 'info', null);
+            
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF({
+                orientation: 'p',
+                unit: 'mm',
+                format: 'a4'
+            });
+
+            const margin = 15;
+            const pageWidth = doc.internal.pageSize.getWidth();
+            const contentWidth = pageWidth - margin * 2;
+            let yPos = margin;
+
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(18);
+            doc.text('Relatório de Viagem - Raptor Monitoramento', pageWidth / 2, yPos, { align: 'center' });
+            yPos += 10;
+            doc.setLineWidth(0.5);
+            doc.line(margin, yPos, pageWidth - margin, yPos);
+            yPos += 8;
+
+            doc.setFontSize(12);
+            doc.text('Informações da Análise', margin, yPos);
+            yPos += 6;
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(10);
+            const client = document.getElementById('client-name').value || 'Não informado';
+            const driver = document.getElementById('driver-name').value || 'Não informado';
+            const plate = document.getElementById('plate-number').value || 'Não informado';
+            const process = document.getElementById('process-number').value || 'Não informado';
+            doc.text(`Cliente: ${client}`, margin, yPos);
+            doc.text(`Placa: ${plate}`, pageWidth / 2, yPos);
+            yPos += 5;
+            doc.text(`Motorista: ${driver}`, margin, yPos);
+            doc.text(`Processo: ${process}`, pageWidth / 2, yPos);
+            yPos += 8;
+
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(12);
+            doc.text('Resumo da Viagem', margin, yPos);
+            yPos += 6;
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(10);
+            const summaryText = 
+                `Distância Total: ${dashboardMetrics.totalKm}\n` +
+                `Duração Total: ${dashboardMetrics.totalDuration}\n` +
+                `Tempo Ignição Ligada: ${dashboardMetrics.ignitionOnTime}\n` +
+                `Velocidade Média: ${dashboardMetrics.avgSpeed} km/h\n` +
+                `Velocidade Máxima: ${dashboardMetrics.maxSpeed} km/h\n` +
+                `Excessos de Velocidade: ${dashboardMetrics.speedingCount} vezes`;
+            doc.text(summaryText, margin, yPos);
+            yPos += 35;
+
+            try {
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(12);
+                doc.text('Mapa da Rota', margin, yPos);
+                yPos += 6;
+                const mapCanvas = await html2canvas(document.getElementById('map'), { useCORS: true });
+                const mapImgData = mapCanvas.toDataURL('image/png');
+                const mapHeight = (mapCanvas.height * contentWidth) / mapCanvas.width;
+                doc.addImage(mapImgData, 'PNG', margin, yPos, contentWidth, mapHeight);
+                yPos += mapHeight + 8;
+
+                if (yPos > doc.internal.pageSize.getHeight() - 40) {
+                    doc.addPage();
+                    yPos = margin;
+                }
+
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(12);
+                doc.text('Detalhes da Viagem', margin, yPos);
+                yPos += 7;
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(9);
+
+                const currentData = filteredData.length ? filteredData : reportData;
+                const tripEvents = await buildTripEventsList(currentData, reportHeaders);
+
+                tripEvents.forEach(event => {
+                    let eventText = '';
+                    switch(event.type) {
+                        case 'start':
+                            eventText = `▶ Início da Viagem: ${event.time.toLocaleString('pt-BR')}`;
+                            break;
+                        case 'poi_stop':
+                            eventText = `■ Parada em ${event.name}: ${event.arrivalTime.toLocaleTimeString('pt-BR')} a ${event.departureTime.toLocaleTimeString('pt-BR')} (Duração: ${event.duration})`;
+                            break;
+                        case 'travel':
+                            eventText = `» Deslocamento de ${event.from} para ${event.to} (Duração: ${event.duration})`;
+                            break;
+                        case 'end':
+                            eventText = `■ Fim da Viagem: ${event.time.toLocaleString('pt-BR')}`;
+                            break;
+                    }
+                    if (eventText) {
+                        doc.text(eventText, margin, yPos);
+                        yPos += 5;
+                        if (yPos > doc.internal.pageSize.getHeight() - margin) {
+                            doc.addPage();
+                            yPos = margin;
+                        }
+                    }
+                });
+                yPos += 5;
+
+                if (yPos > doc.internal.pageSize.getHeight() - 60) {
+                    doc.addPage();
+                    yPos = margin;
+                }
+                
+                const { enrichedData, enrichedHeaders } = enrichDataForGrid(currentData, reportHeaders);
+                const latIndex = enrichedHeaders.indexOf('LATITUDE');
+                const lonIndex = enrichedHeaders.indexOf('LONGITUDE');
+                const dateIndex = enrichedHeaders.indexOf('Data/Hora');
+                const kmhIndex = enrichedHeaders.indexOf('KM/H');
+                const ignitionIndex = enrichedHeaders.indexOf('IGNIÇÃO');
+                const poiIndex = enrichedHeaders.indexOf('POI Próximo');
+
+                const tableHeaders = ['Data/Hora', 'KM/H', 'Ignição', 'POI Próximo', 'Endereço'];
+                
+                const addressPromises = enrichedData.map(row => fetchAddress(row[latIndex], row[lonIndex]));
+                const addresses = await Promise.all(addressPromises);
+
+                const tableBody = enrichedData.map((row, index) => [
+                    row[dateIndex] instanceof Date ? row[dateIndex].toLocaleString('pt-BR') : row[dateIndex],
+                    row[kmhIndex],
+                    row[ignitionIndex],
+                    row[poiIndex],
+                    addresses[index]
+                ]);
+
+                doc.autoTable({
+                    head: [tableHeaders],
+                    body: tableBody,
+                    startY: yPos,
+                    theme: 'grid',
+                    headStyles: { fillColor: [41, 128, 185], textColor: 255 },
+                    styles: { fontSize: 8 },
+                    columnStyles: {
+                        4: { cellWidth: 'auto' } 
+                    }
+                });
+
+                doc.save(`Relatorio_${plate}_${new Date().toISOString().split('T')[0]}.pdf`);
+                hideNotification();
+                showNotification('PDF gerado com sucesso!', 'success');
+
+            } catch (error) {
+                console.error("Erro ao gerar PDF:", error);
+                hideNotification();
+                showNotification('Falha ao gerar o PDF.', 'error');
+            }
+        }
+
+
+        /********************* Painel Lateral *********************/
+        function openSidePanel() {
+            document.getElementById('side-panel').classList.add('is-open');
+            document.getElementById('panel-backdrop').classList.add('is-visible');
+        }
+
+        function closeSidePanel() {
+            document.getElementById('side-panel').classList.remove('is-open');
+            document.getElementById('panel-backdrop').classList.remove('is-visible');
+        }
+        
+        /********************* Clima (simulado/placeholder) *********************/
+        async function fetchWeatherForTrip(data, headers) {
+            tripWeather = { temp: "24°C", condition: "Ensolarado", icon: "fa-sun" };
+        }
+
+    </script>
+</body>
+</html>
