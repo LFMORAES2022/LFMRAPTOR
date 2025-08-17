@@ -1052,7 +1052,8 @@
         function initializeMap() {
             map = L.map('map', { zoomControl: false }).setView([-23.00, -47.06], 13);
             L.control.zoom({ position: 'bottomright' }).addTo(map);
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{y}/{y}.png', {
+            // CORREÇÃO: A URL do tileLayer estava com {y} duplicado em vez de {x} e {y}.
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             }).addTo(map);
 
