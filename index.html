@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-    <title>Raptor Monitoramento v7.1 (Supabase Integrado)</title>
+    <title>Raptor Monitoramento v7.2 (Supabase Integrado)</title>
 
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
@@ -320,6 +320,11 @@
                 <button id="show-ranking-btn" class="px-3 py-2 rounded-lg border">Ranking</button>
                 <button id="view-saved-analyses-btn" class="px-3 py-2 rounded-lg border">Análises Salvas</button>
                 <button id="theme-toggle" title="Alternar tema" class="px-3 py-2 rounded-lg border" aria-label="Tema">🌓</button>
+                <!-- NOVO: Elemento para exibir o e-mail do usuário -->
+                <div class="text-right">
+                    <p id="user-email-display" class="text-sm font-medium text-gray-700 dark:text-gray-300"></p>
+                    <p class="text-xs text-muted">Online</p>
+                </div>
                 <div class="relative">
                     <button id="user-menu-btn" class="w-10 h-10 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" /></svg>
@@ -549,6 +554,12 @@
         
         async function initializeApp() {
             try {
+                // NOVO: Pega o usuário e atualiza a UI
+                const { data: { user } } = await supabaseClient.auth.getUser();
+                if (user) {
+                    document.getElementById('user-email-display').textContent = user.email;
+                }
+
                 initTheme();
                 initializeMap();
                 setupEventListeners();
@@ -582,7 +593,7 @@
                 console.log('Login bem-sucedido!', data.user);
                 document.getElementById('login-page').style.display = 'none';
                 document.getElementById('app-page').style.display = 'flex';
-                await initializeApp();
+                await initializeApp(); // initializeApp já vai pegar o e-mail
             }
         }
 
@@ -806,8 +817,6 @@
                 return;
             }
             
-            // --- CORREÇÃO APLICADA AQUI ---
-            // O objeto agora usa 'snake_case' para corresponder às colunas do Supabase
             const analysisData = {
                 saved_at: new Date().toISOString(),
                 client_name: document.getElementById('client-name').value,
@@ -820,7 +829,6 @@
                 report_json: originalReportJson,
                 pois: JSON.parse(localStorage.getItem('savedPois') || '[]')
             };
-            // --- FIM DA CORREÇÃO ---
 
             try {
                 await raptorDB.saveAnalysis(analysisData);
@@ -860,8 +868,6 @@
         }
         function loadAnalysisData(analysisData) {
             clearAllData();
-            // --- CORREÇÃO APLICADA AQUI ---
-            // Lendo os dados com 'snake_case' que vêm do Supabase
             document.getElementById('client-name').value = analysisData.client_name || '';
             document.getElementById('driver-name').value = analysisData.driver_name || '';
             document.getElementById('plate-number').value = analysisData.plate_number || '';
@@ -874,7 +880,6 @@
             loadPoisFromLocalStorage();
 
             originalReportJson = analysisData.report_json;
-            // --- FIM DA CORREÇÃO ---
             
             const dataRowsJson = originalReportJson.slice(7);
             reportHeaders = dataRowsJson[0].map(h => String(h || "").trim());
@@ -1052,7 +1057,6 @@
         function initializeMap() {
             map = L.map('map', { zoomControl: false }).setView([-23.00, -47.06], 13);
             L.control.zoom({ position: 'bottomright' }).addTo(map);
-            // CORREÇÃO: A URL do tileLayer estava com {y} duplicado em vez de {x} e {y}.
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             }).addTo(map);
